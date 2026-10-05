@@ -271,7 +271,7 @@ describe('CW・センシティブフラグ（#178）', () => {
 describe('Bluesky: 引用と言えるのは投稿の埋め込みだけ', () => {
   const post = (embedRecord: unknown) => ({
     author: { handle: 'alice.bsky.social', did: DID, displayName: 'Alice' },
-    record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' },
+    record: { $type: 'app.bsky.feed.post', text: 'hi', createdAt: '2026-01-01T00:00:00Z' },
     embed: { $type: 'app.bsky.embed.record#view', record: embedRecord },
   });
 
@@ -409,7 +409,21 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
     alt: 'a clip',
     aspectRatio: { width: 1280, height: 720 },
   };
+  const quotedView = {
+    $type: 'app.bsky.embed.record#view',
+    record: {
+      $type: 'app.bsky.embed.record#viewRecord',
+      uri: `at://${DID}/app.bsky.feed.post/quoted`,
+      cid: 'quoted-cid',
+      indexedAt: '2026-01-01T00:00:00Z',
+      author: { did: DID, handle: 'alice.bsky.social' },
+      value: { $type: 'app.bsky.feed.post', text: '引用本文', createdAt: '2026-01-01T00:00:00Z' },
+    },
+  };
   const videoPost = (embed: unknown) => ({
+    uri: `at://${DID}/app.bsky.feed.post/rk`,
+    cid: 'test-cid',
+    indexedAt: '2026-01-01T00:00:00Z',
     author: { handle: 'alice.bsky.social', did: DID, displayName: 'Alice' },
     record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' },
     embed,
@@ -446,7 +460,7 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
         const url = String(input);
         if (url.includes('resolveHandle')) return Response.json({ did });
         if (url.includes('getPostThread')) {
-          const embed = wrapped ? { $type: 'app.bsky.embed.recordWithMedia#view', record: {}, media: videoView } : videoView;
+          const embed = wrapped ? { $type: 'app.bsky.embed.recordWithMedia#view', record: quotedView, media: videoView } : videoView;
           return Response.json(apiFixture(url, { thread: { post: { ...videoPost(embed), author: { handle: 'alice.bsky.social', did, displayName: 'Alice' } } } }));
         }
         if (url.includes('getProfile')) return Response.json(apiFixture(url, { did, handle: 'alice.bsky.social', displayName: 'Alice', followersCount: 7 }));
@@ -489,7 +503,7 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
   test('recordWithMedia の中の動画も同じ扱い', async () => {
     mockFetch([
       ['resolveHandle', { did: DID }],
-      ['getPostThread', { thread: { post: videoPost({ $type: 'app.bsky.embed.recordWithMedia#view', record: {}, media: videoView }) } }],
+      ['getPostThread', { thread: { post: videoPost({ $type: 'app.bsky.embed.recordWithMedia#view', record: quotedView, media: videoView }) } }],
       ['plc.directory', DID_DOC],
     ]);
 

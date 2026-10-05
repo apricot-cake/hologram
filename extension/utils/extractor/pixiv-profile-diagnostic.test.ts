@@ -30,7 +30,10 @@ test('契約違反は値を含まない固定の Zod path を記録する', asyn
   mockProfile(() => Response.json({ error: false, body: { imageBig: { secret: 'private-value' }, social: { 'private-account': { url: 123 } } } }));
   const { record, entries } = await capture();
   expect(record.acquisitionIssues).toContainEqual({ scope: 'profile', reason: 'invalidResponse' });
-  expect(entries).toEqual([{ stage: 'metadata', phase: 'fail', platform: 'pixiv', category: 'pixiv-profile', operation: 'ajax-user-full', code: 200, reason: 'contract', error: expect.stringContaining('imageBig') }]);
+  expect(entries).toEqual([
+    { stage: 'metadata', phase: 'fail', platform: 'pixiv', category: 'pixiv-profile', operation: 'ajax-user-full', code: 200, reason: 'contract', error: 'imageBig' },
+    { stage: 'metadata', phase: 'fail', platform: 'pixiv', category: 'pixiv-profile', operation: 'ajax-user-full', code: 200, reason: 'contract', error: 'social' },
+  ]);
   expect(JSON.stringify(entries)).not.toMatch(/private|https:|credentials|12345/);
 });
 

@@ -34,39 +34,7 @@ export const PixivProfileSchema = z.looseObject({
     .nullable()
     .optional(),
 });
-export const BlueskyProfileSchema = z.looseObject({
-  did: z.string().min(1),
-  handle: z.string().min(1),
-  avatar: z.string().optional(),
-  banner: z.string().optional(),
-  description: z.string().optional(),
-  followersCount: CountSchema.optional(),
-  followsCount: CountSchema.optional(),
-  createdAt: dateText.optional(),
-});
-export const BlueskyImagesSchema = z.array(z.looseObject({ fullsize: z.string().min(1), alt: z.string(), aspectRatio: dimensions.optional() }));
-export const BlueskyExternalSchema = z.looseObject({ uri: z.string().min(1), title: z.string(), description: z.string(), thumb: z.string().optional() });
-export const BlueskyVideoSchema = z.looseObject({ cid: z.string().min(1), playlist: z.string().min(1), alt: z.string().optional(), thumbnail: z.string().optional(), aspectRatio: dimensions.optional() });
-const bskyMediaView = z.looseObject({
-  $type: z.string(),
-  images: BlueskyImagesSchema.optional(),
-  external: BlueskyExternalSchema.optional(),
-  cid: z.string().optional(),
-  playlist: z.string().optional(),
-  thumbnail: z.string().optional(),
-  alt: z.string().optional(),
-  aspectRatio: dimensions.optional(),
-});
-export const BlueskyQuotedSchema = z.looseObject({
-  uri: z.string().optional(),
-  value: z.looseObject({ text: z.string().optional(), createdAt: dateText.optional() }).optional(),
-  author: z.looseObject({ did: z.string().optional(), handle: z.string().optional(), displayName: z.string().optional(), avatar: z.string().optional() }).optional(),
-  embeds: z.array(bskyMediaView).optional(),
-});
-const bskyEmbedView = bskyMediaView.extend({
-  media: bskyMediaView.optional(),
-  record: BlueskyQuotedSchema.extend({ record: BlueskyQuotedSchema.optional() }).optional(),
-});
+export { BlueskyProfileSchema, BlueskyImagesSchema, BlueskyExternalSchema, BlueskyVideoSchema, BlueskyQuotedSchema, BlueskyPostSchema, BlueskyThreadResponseSchema } from './bluesky-api-schemas.ts';
 export const ResolveHandleSchema = z.object({ did: z.string().regex(/^did:[a-z]+:.+/) });
 export const PixivEnvelopeSchema = z.looseObject({ error: z.boolean(), body: z.unknown().optional() });
 export const XProfileUrlsSchema = z.array(z.looseObject({ url: z.string(), expanded_url: z.string().optional() }));
@@ -132,6 +100,15 @@ export const XPostSchema = z.looseObject({
   entities,
   edit_control: z.looseObject({ edit_tweet_ids: z.array(z.string()) }).optional(),
 });
+// 一つの付随情報の不整合で、独立して取得できた本文や媒体を捨てない。
+export const XPostCoreSchema = XPostSchema.omit({ mediaDetails: true, quoted_tweet: true, parent: true, card: true, user: true, entities: true, edit_control: true, favorite_count: true, conversation_count: true });
+export const XUserCoreSchema = xUser.pick({ id_str: true, name: true, screen_name: true });
+export const XAvatarSchema = xUser.pick({ profile_image_url_https: true });
+export const XProfileSchema = xUser.omit({ id_str: true, name: true, screen_name: true, profile_image_url_https: true });
+export const XCountsSchema = XPostSchema.pick({ favorite_count: true, conversation_count: true });
+export const XEntitiesSchema = entities;
+export const XCardSchema = XPostSchema.shape.card;
+export const XEditSchema = XPostSchema.shape.edit_control;
 export const PixivIllustSchema = z.looseObject({
   illustId: z.string().min(1),
   illustComment: optionalText,
@@ -153,34 +130,14 @@ export const PixivIllustSchema = z.looseObject({
   createDate: dateText,
   uploadDate: dateText,
 });
-// app.bsky.feed.defs#postView と app.bsky.feed.post。件数は公式に省略可能。
-export const BlueskyPostSchema = z.looseObject({
-  uri: z.string().min(1),
-  cid: z.string().min(1),
-  indexedAt: dateText,
-  author: z.looseObject({ did: z.string().min(1), handle: z.string().min(1), displayName: z.string().optional(), avatar: z.string().optional() }),
-  embed: bskyEmbedView.optional(),
-  record: z.looseObject({
-    embed: z.looseObject({ $type: z.string() }).optional(),
-    reply: z.looseObject({ parent: z.looseObject({ uri: z.string().min(1) }), root: z.looseObject({ uri: z.string().min(1) }).optional() }).optional(),
-    text: z.string(),
-    createdAt: dateText,
-    tags: z.array(z.string()).optional(),
-    langs: z.array(z.string()).optional(),
-    facets: z.array(z.looseObject({ features: z.array(z.looseObject({ $type: z.string(), tag: z.string().optional() }).refine((feature) => feature.$type !== 'app.bsky.richtext.facet#tag' || feature.tag !== undefined, { path: ['tag'], message: 'Missing tag' })) })).optional(),
-    labels: z.looseObject({ values: z.array(z.looseObject({ val: z.string() })) }).optional(),
-  }),
-  likeCount: CountSchema.optional(),
-  repostCount: CountSchema.optional(),
-  replyCount: CountSchema.optional(),
-});
-
-export const BlueskyThreadResponseSchema = z.object({
-  thread: z
-    .looseObject({ $type: z.string().optional(), uri: z.string().optional(), post: BlueskyPostSchema.optional() })
-    .refine((thread) => thread.post !== undefined || (['app.bsky.feed.defs#notFoundPost', 'app.bsky.feed.defs#blockedPost'].includes(thread.$type ?? '') && !!thread.uri), { message: 'Missing thread post' }),
-});
-
+export const PixivIllustCoreSchema = PixivIllustSchema.omit({ illustComment: true, description: true, likeCount: true, bookmarkCount: true, viewCount: true, commentCount: true, seriesNavData: true, tags: true });
+export const PixivTextSchema = PixivIllustSchema.pick({ illustComment: true, description: true });
+export const PixivCountsSchema = PixivIllustSchema.pick({ likeCount: true, bookmarkCount: true, viewCount: true, commentCount: true });
+export const PixivTagsSchema = PixivIllustSchema.shape.tags;
+export const PixivSeriesSchema = PixivIllustSchema.shape.seriesNavData;
+export const PixivAvatarSchema = PixivProfileSchema.pick({ image: true, imageBig: true });
+export const PixivBioSchema = PixivProfileSchema.pick({ comment: true, commentHtml: true });
+export const PixivLinksSchema = PixivProfileSchema.pick({ webpage: true, social: true });
 export function rethrowContractError(error: unknown): void {
   if (error instanceof z.ZodError || error instanceof SyntaxError) throw error;
 }

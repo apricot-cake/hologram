@@ -1,5 +1,5 @@
 import { ExtractedPostSchema } from '../../../native-host/protocol.mts';
-import { XProfileUrlsSchema, XPostSchema, XMediaSchema, XQuotedSchema, DecimalCountSchema, CardStringBindingSchema, CardImageBindingSchema, rethrowContractError } from './api-schemas.ts';
+import { XProfileUrlsSchema, XPostCoreSchema, XUserCoreSchema, XAvatarSchema, XProfileSchema, XCountsSchema, XEntitiesSchema, XCardSchema, XEditSchema, XMediaSchema, XQuotedSchema, DecimalCountSchema, CardStringBindingSchema, CardImageBindingSchema, rethrowContractError } from './api-schemas.ts';
 // X（旧 Twitter）。
 //
 // API は cdn.syndication.twimg.com（非公式の埋め込み用 JSON。CORS が制限されているので
@@ -10,6 +10,8 @@ import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, parseM
 import { parseCount } from './dom-meta.ts';
 import { acquisitionFailed, emptyRecord, normalizeHashtags, toIso } from './record.ts';
 import { createMetadataRequest } from './metadata-request.ts';
+import { createAcquisitionDiagnostic } from './acquisition-diagnostic.ts';
+import type { SaveLogEntry } from '../capture-log.ts';
 import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord, QuotedPost } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
@@ -562,8 +564,10 @@ function xQuotedRef(t): QuotedPost | null {
   };
 }
 
-async function fetchXTweet(parsed, url): Promise<PostRecord> {
+async function fetchXTweet(parsed, url, logDiagnostic?: (entry: SaveLogEntry) => void): Promise<PostRecord> {
   const rec = emptyRecord(url, 'x');
+  const report = createAcquisitionDiagnostic(rec, logDiagnostic);
+  let status: number | null = null;
   rec.screenName = parsed.screenName;
   // 正規の permalink。ページ上のアンカーは /photo/N、/analytics、クエリ文字列を持ちうるし、
   // サブドメインのホスト（pro.x.com）はステータスのページとして解決しないことがある。
@@ -571,9 +575,12 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
   if (parsed.screenName) rec.url = `https://x.com/${parsed.screenName}/status/${parsed.id}`;
   try {
     const api = `https://cdn.syndication.twimg.com/tweet-result?id=${parsed.id}&token=${xToken(parsed.id)}&lang=en`;
-    const res = await createMetadataRequest()(api);
+    const res = await createMetadataRequest()(api, undefined, (code) => {
+      status = code;
+    });
     if (!res.ok) {
       acquisitionFailed(rec, 'post', res.status === 404 ? 'unavailable' : 'fetchFailed');
+      report('x-post', status, 'http');
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
@@ -583,57 +590,103 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     if (j && j.__typename === 'TweetTombstone') {
       const t = (j.tombstone && j.tombstone.text && j.tombstone.text.text) || '';
       rec.metaError = /deleted|no longer exists|suspended/i.test(t) ? 'unavailable' : /limits who can view/i.test(t) ? 'protected' : /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'embedUnavailable';
+      report('x-post', status, 'unavailable');
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
-    XPostSchema.parse(j);
-    rec.text = j.text ? xExpandUrls(j.text, j.entities) : null;
-    if (xWasEdited(j.edit_control)) rec.isEdited = true;
-    // メディアなしの正常応答では省略される。届いた値の型は XPostSchema で検証済み。
-    rec.sensitive = j.possibly_sensitive ?? null;
-    rec.poll = xPoll(j.card);
-    rec.linkCard = xLinkCard(j.card, j.entities);
-    if (j.user) {
-      rec.displayName = j.user.name || null;
-      rec.screenName = j.user.screen_name || rec.screenName;
-      rec.userId = j.user.id_str || null;
-      // アバター。埋め込み用 API が配信するのは 48px の _normal の変種なので、400px のものへ
-      // 組み直す。ほかの公開プロフィール欄は応答に含まれる場合だけ正規化して保存する。
-      if (j.user.profile_image_url_https) {
-        rec.avatar = j.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1');
+    const core = XPostCoreSchema.parse(j);
+    const user = XUserCoreSchema.parse(j.user);
+    // 識別に必要な値を先に検証し、任意の情報は工程ごとに扱う。
+    function section<T>(operation: string, scope: 'post' | 'profile' | 'media', read: () => T): T | null {
+      try {
+        return read();
+      } catch (error) {
+        acquisitionFailed(rec, scope, 'invalidResponse');
+        report(operation, status, 'contract', error);
+        return null;
       }
-      rec.bio = j.user.description ? xExpandUrls(j.user.description, j.user.entities?.description) : null;
-      rec.profileLinks = xProfileLinks(j.user);
-      rec.banner = j.user.profile_banner_url_https || j.user.profile_banner_url || null;
-      rec.followers = j.user.followers_count ?? null;
-      rec.following = j.user.friends_count ?? null;
-      rec.authorCreatedAt = toIso(j.user.created_at);
-      if (j.user.screen_name) rec.url = `https://x.com/${j.user.screen_name}/status/${parsed.id}`;
     }
-    rec.likes = j.favorite_count ?? null;
-    rec.replies = j.conversation_count ?? null;
-    rec.date = toIso(j.created_at);
-    rec.lang = j.lang || null;
-    rec.hashtags = xHashtags(j);
-    rec.mediaType = xMediaType(j.mediaDetails);
-    rec.media = xMedia(j.mediaDetails);
-    if (rec.media.length < (j.mediaDetails?.length ?? 0)) acquisitionFailed(rec, 'media', 'unavailable');
-    if (j.quoted_tweet) {
+    const entities = section('x-entities', 'post', () => XEntitiesSchema.parse(j.entities));
+    rec.text = core.text ? xExpandUrls(core.text, entities) : null;
+    if (j.edit_control !== undefined)
+      section('x-edit', 'post', () => {
+        if (xWasEdited(XEditSchema.parse(j.edit_control))) rec.isEdited = true;
+      });
+    // メディアなしの正常応答では省略される。届いた値の型は投稿の基本情報で検証済み。
+    rec.sensitive = core.possibly_sensitive ?? null;
+    if (j.card !== undefined)
+      section('x-card', 'post', () => {
+        const card = XCardSchema.parse(j.card);
+        const poll = xPoll(card);
+        const linkCard = xLinkCard(card, entities);
+        rec.poll = poll;
+        rec.linkCard = linkCard;
+      });
+    rec.displayName = user.name || null;
+    rec.screenName = user.screen_name;
+    rec.userId = user.id_str;
+    rec.url = `https://x.com/${user.screen_name}/status/${parsed.id}`;
+    // 埋め込み用 API の 48px のアバターを 400px の変種へ組み直す。
+    section('x-avatar', 'profile', () => {
+      const avatar = XAvatarSchema.parse(j.user);
+      rec.avatar = avatar.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1');
+    });
+    const profile = section('x-profile', 'profile', () => XProfileSchema.parse(j.user));
+    if (profile) {
+      // 公開プロフィールの追加情報は応答に含まれる場合だけ保存する。
+      rec.bio = profile.description ? xExpandUrls(profile.description, profile.entities?.description) : null;
+      rec.profileLinks = xProfileLinks(profile);
+      rec.banner = profile.profile_banner_url_https || profile.profile_banner_url || null;
+      rec.followers = profile.followers_count ?? null;
+      rec.following = profile.friends_count ?? null;
+      rec.authorCreatedAt = toIso(profile.created_at);
+    }
+    const counts = section('x-counts', 'post', () => XCountsSchema.parse(j));
+    if (counts) {
+      rec.likes = counts.favorite_count;
+      rec.replies = counts.conversation_count;
+    }
+    rec.date = toIso(core.created_at);
+    rec.lang = core.lang || null;
+    rec.hashtags = xHashtags({ text: core.text, entities });
+    const media = section('x-media', 'media', () => {
+      if (j.mediaDetails === undefined) return [];
+      if (!Array.isArray(j.mediaDetails)) return XMediaSchema.parse(j.mediaDetails);
+      const valid: ReturnType<typeof XMediaSchema.parse> = [];
+      for (const item of j.mediaDetails) {
+        const entry = section('x-media', 'media', () => XMediaSchema.parse([item]));
+        if (entry) valid.push(...entry);
+      }
+      return valid;
+    });
+    if (media) {
+      rec.mediaType = xMediaType(media);
+      rec.media = xMedia(media);
+      if (rec.media.length < media.length) {
+        acquisitionFailed(rec, 'media', 'unavailable');
+        report('x-media', status, 'unavailable');
+      }
+    }
+    if (j.quoted_tweet !== undefined) {
       rec.isQuote = true;
       // screen_name を守る。quoted_tweet は screen_name を持たない user オブジェクトを
       // 持ちうるので、そのままだと .../undefined/status/<id> を組み立ててしまう。
-      const qt = j.quoted_tweet;
-      if (qt.user && qt.user.screen_name && qt.id_str) {
-        rec.quotedUrl = `https://x.com/${qt.user.screen_name}/status/${qt.id_str}`;
-      }
-      rec.quotedPost = xQuotedRef(qt);
+      section('x-quote', 'post', () => {
+        const quoted = xQuotedRef(XQuotedSchema.parse(j.quoted_tweet));
+        rec.quotedPost = quoted;
+        rec.quotedUrl = quoted?.url ?? null;
+        if (quoted && quoted.media.length < (j.quoted_tweet.mediaDetails?.length ?? 0)) {
+          acquisitionFailed(rec, 'media', 'unavailable');
+          report('x-quote', status, 'unavailable');
+        }
+      });
     }
     if (j.in_reply_to_screen_name) {
       rec.isReply = true;
       rec.replyToId = j.in_reply_to_status_id_str || null;
       // 自己返信（スレッド）＝スレッドへ格上げして isReply を消す。そうすることで4つの
       // プラットフォームの分類が互いに排他になる（自分で連ねたスレッドは返信ではない）。
-      if (j.in_reply_to_user_id_str && j.user && j.in_reply_to_user_id_str === j.user.id_str) {
+      if (j.in_reply_to_user_id_str && j.in_reply_to_user_id_str === user.id_str) {
         rec.isThread = true;
         rec.isReply = null;
       }
@@ -641,10 +694,21 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       // したか」を tweet ごとに示す信号が無い。j.parent が単に欠けるだけで（親が削除済み
       // か鍵付き、あるいはその返信が、埋め込み用 API にこの欄が入るより前のもの）、その場合は
       // xQuotedRef(undefined) がすでに null と答える。
-      rec.replyToPost = xQuotedRef(j.parent);
+      if (j.parent !== undefined)
+        section('x-parent', 'post', () => {
+          const parent = xQuotedRef(XQuotedSchema.parse(j.parent));
+          rec.replyToPost = parent;
+          if (parent && parent.media.length < (j.parent.mediaDetails?.length ?? 0)) {
+            acquisitionFailed(rec, 'media', 'unavailable');
+            report('x-parent', status, 'unavailable');
+          }
+        });
     }
+    if (!rec.acquisitionIssues.length) report('x-post', status);
   } catch (error) {
-    acquisitionFailed(rec, 'post', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
+    const contract = error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError');
+    acquisitionFailed(rec, 'post', contract ? 'invalidResponse' : 'fetchFailed');
+    report('x-post', status, error instanceof SyntaxError ? 'json' : contract ? 'contract' : 'transport', error);
   }
   // API が何も寄こさなかったときでも、ID が投稿の時刻を符号化している。
   if (!rec.date) rec.date = xSnowflakeDate(parsed.id);

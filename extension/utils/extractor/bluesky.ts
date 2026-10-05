@@ -1,5 +1,7 @@
 import { ExtractedPostSchema } from '../../../native-host/protocol.mts';
-import { ResolveHandleSchema, BlueskyQuotedSchema, BlueskyThreadResponseSchema, BlueskyProfileSchema, BlueskyImagesSchema, BlueskyExternalSchema, BlueskyVideoSchema, rethrowContractError } from './api-schemas.ts';
+import { ResolveHandleSchema, rethrowContractError } from './api-schemas.ts';
+import { BlueskyQuotedSchema, BlueskyThreadResponseSchema, BlueskyProfileSchema, BlueskyImagesSchema, BlueskyExternalSchema, BlueskyVideoSchema, BlueskyFeedRecordSchema, BLUESKY_EMBED_VIEW_TYPES } from './bluesky-api-schemas.ts';
+import { createAcquisitionDiagnostic } from './acquisition-diagnostic.ts';
 // Bluesky。
 //
 // API は public.api.bsky.app（公式の公開 AppView、CORS *）。投稿が動画を持つときは、
@@ -81,17 +83,19 @@ function parseBlueskyPostLink(href: string): BlueskyPostLink | null {
 
 // === API ===
 
-async function resolveBlueskyDid(rec: PostRecord, handle, request: MetadataRequest) {
+async function resolveBlueskyDid(rec: PostRecord, handle, request: MetadataRequest, report: ReturnType<typeof createAcquisitionDiagnostic>) {
   if (!handle || handle.startsWith('did:')) return handle || null;
   try {
     const res = await request(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
     if (!res.ok) {
+      report('bluesky.resolveHandle', res.status, 'httpError');
       acquisitionFailed(rec, 'post');
       return null;
     }
     const data = res.data;
     return ResolveHandleSchema.parse(data).did;
   } catch (error) {
+    report('bluesky.resolveHandle', null, undefined, error);
     acquisitionFailed(rec, 'post', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
     return null;
   }
@@ -115,7 +119,7 @@ function blueskyDidDocUrl(did) {
   return null; // 知らない DID メソッドには、こちらが辿れる解決の規則が無い
 }
 
-async function resolveBlueskyPds(rec: PostRecord, did, request: MetadataRequest): Promise<string | null> {
+async function resolveBlueskyPds(rec: PostRecord, did, request: MetadataRequest, report: ReturnType<typeof createAcquisitionDiagnostic>): Promise<string | null> {
   try {
     const docUrl = blueskyDidDocUrl(did);
     if (!docUrl) {
@@ -127,6 +131,7 @@ async function resolveBlueskyPds(rec: PostRecord, did, request: MetadataRequest)
     // 正規の DID document URL そのものからだけ取得する。
     const res = await request(docUrl, { redirect: 'error' });
     if (!res.ok) {
+      report('bluesky.resolvePds', res.status, 'httpError');
       acquisitionFailed(rec, 'media');
       return null;
     }
@@ -144,20 +149,21 @@ async function resolveBlueskyPds(rec: PostRecord, did, request: MetadataRequest)
     }
     return ep.replace(/\/+$/, '');
   } catch (error) {
+    report('bluesky.resolvePds', null, undefined, error);
     acquisitionFailed(rec, 'media', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
     return null;
   }
 }
 
 function bskyMediaType(post) {
-  const e = post.embed || (post.record && post.record.embed);
+  const e = post.embed;
   const type = e && e.$type ? e.$type : '';
-  if (type.includes('app.bsky.embed.video')) return 'video';
-  if (type.includes('app.bsky.embed.images')) return 'image';
-  if (type.includes('recordWithMedia')) {
+  if (type === 'app.bsky.embed.video#view') return 'video';
+  if (type === 'app.bsky.embed.images#view') return 'image';
+  if (type === 'app.bsky.embed.recordWithMedia#view') {
     const mt = e.media && e.media.$type ? e.media.$type : '';
-    if (mt.includes('video')) return 'video';
-    if (mt.includes('images')) return 'image';
+    if (mt === 'app.bsky.embed.video#view') return 'video';
+    if (mt === 'app.bsky.embed.images#view') return 'image';
   }
   return null;
 }
@@ -165,11 +171,11 @@ function bskyMediaType(post) {
 // 動画の embed そのもの（view か、record 自身の embed）。recordWithMedia のエンベロープは
 // 剥がす。投稿が動画を持たなければ null。
 function bskyVideoEmbed(post) {
-  const e = post.embed || (post.record && post.record.embed);
+  const e = post.embed;
   if (!e) return null;
   const type = e.$type || '';
-  if (type.includes('app.bsky.embed.video')) return e;
-  if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('app.bsky.embed.video')) return e.media;
+  if (type === 'app.bsky.embed.video#view') return e;
+  if (type === 'app.bsky.embed.recordWithMedia#view' && e.media && e.media.$type === 'app.bsky.embed.video#view') return e.media;
   return null;
 }
 
@@ -202,12 +208,12 @@ function bskyMedia(post, pds?: string | null) {
     }
     return [];
   }
-  const e = post.embed || (post.record && post.record.embed);
+  const e = post.embed;
   if (!e) return [];
   const type = e.$type || '';
   let images: any = null;
-  if (type.includes('app.bsky.embed.images')) images = e.images;
-  else if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('images')) images = e.media.images;
+  if (type === 'app.bsky.embed.images#view') images = e.images;
+  else if (type === 'app.bsky.embed.recordWithMedia#view' && e.media && e.media.$type === 'app.bsky.embed.images#view') images = e.media.images;
   if (images === null) return [];
   return BlueskyImagesSchema.parse(images).map((im) => ({
     url: im.fullsize,
@@ -256,17 +262,18 @@ function bskySensitive(record): boolean {
 // あり、#180 の v1 は引用のメディアをダウンロードしないから（URL は記録するが、ファイルは
 // 取りに行かない＝#290 が他所で引いたのと同じ線）。
 function bskyQuotedMedia(vr): MediaItem[] {
-  const embeds = BlueskyQuotedSchema.parse(vr).embeds ?? [];
+  const quoted = BlueskyQuotedSchema.parse(vr);
+  const embeds = Array.isArray(quoted.embeds) ? quoted.embeds : [];
   const out: MediaItem[] = [];
   for (const e of embeds) {
     const type = e.$type || '';
-    if (type.includes('images')) {
+    if (type === 'app.bsky.embed.images#view') {
       for (const im of BlueskyImagesSchema.parse(e.images)) {
         out.push({ url: im.fullsize, alt: im.alt || null, width: (im.aspectRatio && im.aspectRatio.width) || null, height: (im.aspectRatio && im.aspectRatio.height) || null });
       }
-    } else if (type.includes('video')) {
+    } else if (type === 'app.bsky.embed.video#view') {
       const video = BlueskyVideoSchema.parse(e);
-      out.push({ url: video.playlist, alt: e.alt || null, width: (e.aspectRatio && e.aspectRatio.width) || null, height: (e.aspectRatio && e.aspectRatio.height) || null, type: 'video' as const, poster: e.thumbnail || null });
+      out.push({ url: video.playlist, alt: video.alt || null, width: (video.aspectRatio && video.aspectRatio.width) || null, height: (video.aspectRatio && video.aspectRatio.height) || null, type: 'video' as const, poster: video.thumbnail || null });
     }
   }
   return out;
@@ -279,22 +286,23 @@ function bskyQuotedMedia(vr): MediaItem[] {
 // external.thumb は URL 文字列として文書化されている）。だからここが blob の参照に触ること
 // はない。bskyMedia の動画の経路が PDS を解決するのは、そちらに触るから。
 function bskyLinkCard(post): LinkCard | null {
-  const e = post.embed || (post.record && post.record.embed);
+  const e = post.embed;
   if (!e) return null;
   const type = e.$type || '';
   let ext: any = null;
-  if (type.includes('app.bsky.embed.external')) ext = e.external;
-  else if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('app.bsky.embed.external')) ext = e.media.external;
+  if (type === 'app.bsky.embed.external#view') ext = e.external;
+  else if (type === 'app.bsky.embed.recordWithMedia#view' && e.media && e.media.$type === 'app.bsky.embed.external#view') ext = e.media.external;
   if (ext === null) return null;
   ext = BlueskyExternalSchema.parse(ext);
   return { url: ext.uri, title: ext.title || null, description: ext.description || null, thumbnail: ext.thumb || null };
 }
 
-async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
+async function fetchBlueskyPost(parsed, url, logDiagnostic?: Parameters<typeof createAcquisitionDiagnostic>[1]): Promise<PostRecord> {
   const request = createMetadataRequest();
   const rec = emptyRecord(url, 'bluesky');
   rec.screenName = parsed.handle;
-  const did = await resolveBlueskyDid(rec, parsed.handle, request);
+  const report = createAcquisitionDiagnostic(rec, logDiagnostic);
+  const did = await resolveBlueskyDid(rec, parsed.handle, request, report);
   if (did) rec.userId = did;
   if (!did) {
     if (!rec.acquisitionIssues.length) acquisitionFailed(rec, 'post');
@@ -309,12 +317,13 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     // 投稿がそれに便乗して入ってきてはいけない。
     const res = await request(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=0`);
     if (!res.ok) {
+      report('bluesky.getPostThread', res.status, 'httpError');
       acquisitionFailed(rec, 'post', res.status === 404 ? 'unavailable' : 'fetchFailed');
       return rec;
     }
     const data = res.data;
     const { thread } = BlueskyThreadResponseSchema.parse(data);
-    const post = thread.post;
+    const post: any = thread.post;
     if (!post) {
       acquisitionFailed(rec, 'post', 'unavailable');
       return rec;
@@ -351,8 +360,12 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
           // （rec.profileLinks は emptyRecord() の null のまま）。
           rec.bio = prof.description || null;
           rec.banner = prof.banner || null;
-        } else acquisitionFailed(rec, 'profile');
+        } else {
+          report('bluesky.getProfile', pres.status, 'httpError');
+          acquisitionFailed(rec, 'profile');
+        }
       } catch (error) {
+        report('bluesky.getProfile', null, undefined, error);
         acquisitionFailed(rec, 'profile', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
       }
     }
@@ -360,23 +373,33 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     rec.hashtags = bskyHashtags(record);
     rec.sensitive = bskySensitive(record);
     rec.mediaType = bskyMediaType(post);
+    if (record.embed && !post.embed) {
+      acquisitionFailed(rec, 'media', 'invalidResponse');
+      report('bluesky.embed', 200, 'missingView');
+    }
+    const actualEmbed = post.embed?.$type === 'app.bsky.embed.recordWithMedia#view' ? post.embed.media : post.embed;
+    if (actualEmbed && !BLUESKY_EMBED_VIEW_TYPES.includes(actualEmbed.$type as (typeof BLUESKY_EMBED_VIEW_TYPES)[number])) {
+      acquisitionFailed(rec, 'media', 'invalidResponse');
+      report('bluesky.embed', 200, 'unsupportedType');
+    }
     // DID ドキュメントへの往復の代金を払うのは動画の投稿だけ。画像の投稿は、AppView から
     // すでに fullsize の URL を得ている。
-    const pds = bskyVideoEmbed(post) ? await resolveBlueskyPds(rec, (post.author && post.author.did) || did, request) : null;
+    const pds = bskyVideoEmbed(post) ? await resolveBlueskyPds(rec, (post.author && post.author.did) || did, request, report) : null;
     try {
       rec.media = bskyMedia(post, pds);
       // 投稿原本が宣言する画像枚数と表示用応答を照合する。空・欠落した
       // AppView の画像一覧を「画像のない投稿」と取り違えない。
-      const sourceEmbed = record.embed?.$type?.includes('recordWithMedia') ? record.embed.media : record.embed;
-      const viewEmbed = post.embed?.$type?.includes('recordWithMedia') ? post.embed.media : post.embed;
+      const sourceEmbed = record.embed?.$type === 'app.bsky.embed.recordWithMedia' ? record.embed.media : record.embed;
+      const viewEmbed = post.embed?.$type === 'app.bsky.embed.recordWithMedia#view' ? post.embed.media : post.embed;
       const sourceImages = sourceEmbed && typeof sourceEmbed === 'object' && 'images' in sourceEmbed ? sourceEmbed.images : null;
       const sourceType = sourceEmbed && typeof sourceEmbed === 'object' && '$type' in sourceEmbed ? sourceEmbed.$type : null;
-      if ((typeof sourceType === 'string' && sourceType.includes('app.bsky.embed.images')) || viewEmbed?.$type?.includes('app.bsky.embed.images')) {
+      if ((typeof sourceType === 'string' && sourceType === 'app.bsky.embed.images') || viewEmbed?.$type === 'app.bsky.embed.images#view') {
         const expected = Array.isArray(sourceImages) ? sourceImages.length : null;
         if (!rec.media.length || (expected !== null && rec.media.length !== expected)) acquisitionFailed(rec, 'media', 'invalidResponse');
       }
       if (bskyVideoEmbed(post) && !rec.media.length && !rec.acquisitionIssues.some((issue) => issue.scope === 'media')) acquisitionFailed(rec, 'media', 'invalidResponse');
-    } catch {
+    } catch (error) {
+      report('bluesky.media', 200, undefined, error);
       acquisitionFailed(rec, 'media', 'invalidResponse');
     }
     if (record.reply) {
@@ -393,7 +416,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     }
     rec.linkCard = bskyLinkCard(post);
     const embType = (post.embed && post.embed.$type) || (record.embed && record.embed.$type) || '';
-    if (embType.includes('app.bsky.embed.record')) {
+    if (embType === 'app.bsky.embed.record#view' || embType === 'app.bsky.embed.recordWithMedia#view') {
       const rec2 = (post.embed && post.embed.record) || {};
       const quri = rec2.uri || (rec2.record && rec2.record.uri);
       // 引用と数えるのは、引用された投稿だけ。embed.record は一覧・フィード・スターター
@@ -406,14 +429,25 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
         // （embed.record.record）。handle は、それを持っている方の段から読む。この入れ子は
         // handle だけでなく ViewRecord 全体（author/value/embeds）に効く＝下の vr は、
         // どちらの形でもその唯一の本物の ViewRecord。
-        const vr = BlueskyQuotedSchema.parse(rec2.uri ? rec2 : rec2.record || {});
+        const vr: any = BlueskyQuotedSchema.parse(rec2.uri ? rec2 : rec2.record || {});
+        if (vr.$type && vr.$type !== 'app.bsky.embed.record#viewRecord') {
+          acquisitionFailed(rec, 'media', 'invalidResponse');
+          report('bluesky.quote', 200, 'unsupportedType');
+          return ExtractedPostSchema.parse(rec);
+        }
         const qhandle = (vr.author && vr.author.handle) || qm[1];
         rec.quotedUrl = `https://bsky.app/profile/${qhandle}/post/${qm[2]}`;
         // #180: サブレコードに要るものは、すでにこの ViewRecord の中に全部ある＝.value が
         // 引用されたレコード自体（text/createdAt）で、.embeds が AppView がそれについて
         // すでに解決済みのメディア（fullsize の画像 URL、動画 view の playlist）。だから
         // これを組み立てるのに2本目の要求は使わない。
-        const qval = vr.value || {};
+        const qvalue = vr.value;
+        if (!qvalue || typeof qvalue !== 'object' || ('$type' in qvalue && qvalue.$type !== 'app.bsky.feed.post')) {
+          acquisitionFailed(rec, 'media', 'invalidResponse');
+          report('bluesky.quote', 200, 'unsupportedType');
+          return ExtractedPostSchema.parse(rec);
+        }
+        const qval = BlueskyFeedRecordSchema.parse(qvalue);
         rec.quotedPost = {
           url: rec.quotedUrl,
           displayName: (vr.author && vr.author.displayName) || null,
@@ -428,6 +462,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
       }
     }
   } catch (error) {
+    report('bluesky.getPostThread', null, undefined, error);
     // 部分的な情報は維持し、失敗も呼び出し元へ返す。
     acquisitionFailed(rec, 'post', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
   }

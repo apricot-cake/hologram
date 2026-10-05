@@ -47,11 +47,11 @@ test.each([
 test.each([null, '1', -1, 1.5])('任意の件数でも、届いた不正値は拒否する: %p', (likeCount) => {
   expect(BlueskyPostSchema.safeParse({ ...bluesky, likeCount }).success).toBe(false);
 });
-test('X の契約違反は部分レコードへのフォールバックにならない', async () => {
+test('X の件数の契約違反を記録し、正常な本文を保持する', async () => {
   vi.stubGlobal('fetch', async () => Response.json({ ...x, favorite_count: 'broken' }));
   expect((await fetchXTweet({ id: '1', screenName: 'user' }, 'https://x.com/user/status/1')).acquisitionIssues).toContainEqual({ scope: 'post', reason: 'invalidResponse' });
 });
-test('pixiv の必須件数欠落は保存可能なレコードを返さない', async () => {
+test('pixiv の件数欠落を取得不足として記録する', async () => {
   vi.stubGlobal('fetch', async () => Response.json({ error: false, body: { ...pixiv, likeCount: undefined } }));
   expect((await fetchPixivIllust({ id: '1' }, 'https://www.pixiv.net/artworks/1')).acquisitionIssues).toContainEqual({ scope: 'post', reason: 'invalidResponse' });
 });
@@ -65,9 +65,12 @@ test('Native Messaging は不正メタデータを保存処理へ渡さず、項
   expect(JSON.stringify(result)).not.toContain('private');
 });
 
-test('X の壊れた画像を除外して投稿を返さない', async () => {
+test('X の壊れた画像を正常な保存と扱わず本文を保持する', async () => {
   vi.stubGlobal('fetch', async () => Response.json({ ...x, mediaDetails: [{ type: 'photo' }] }));
-  expect((await fetchXTweet({ id: '1', screenName: 'user' }, 'https://x.com/user/status/1')).acquisitionIssues).toContainEqual({ scope: 'post', reason: 'invalidResponse' });
+  const result = await fetchXTweet({ id: '1', screenName: 'user' }, 'https://x.com/user/status/1');
+  expect(result.acquisitionIssues).toContainEqual({ scope: 'media', reason: 'invalidResponse' });
+  expect(result.text).toBe('text');
+  expect(result.media).toEqual([]);
 });
 test('pixiv のページ一覧に壊れた URL があるとメディア取得失敗を返す', async () => {
   vi.stubGlobal('fetch', async (url) => Response.json({ error: false, body: String(url).endsWith('/pages') ? [{ urls: {} }] : { ...pixiv, pageCount: 2 } }));
