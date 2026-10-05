@@ -5,7 +5,7 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
-const { createVerificationTab } = require('./lib-verification-tab.cts');
+const { developmentOptions, startDevelopmentBrowser, waitForInterrupt } = require('./lib-dev-browser.cts');
 const root = path.resolve(__dirname, '..');
 const url = process.argv[2];
 if (!url || !/^https:\/\/(?:x\.com|twitter\.com|bsky\.app|www\.pixiv\.net)\//.test(url)) throw new Error('検証する投稿の HTTPS URL を指定してください。');
@@ -32,14 +32,21 @@ async function main() {
   process.env.HOLOGRAM_NATIVE_HOST_NAME = host;
   const installer = require('../native-host/install.mts');
   installer.install({ extensionId: 'keggmjkemfcekcffohnpaojacdakpejh' });
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9223');
+  const options = developmentOptions();
+  const session = await startDevelopmentBrowser(options);
   try {
-    const context = browser.contexts()[0];
-    const worker = context.serviceWorkers().find((w) => w.url().startsWith('chrome-extension://keggmjkemfcekcffohnpaojacdakpejh/'));
-    const tabId = await createVerificationTab(worker, url, host);
+    await session.configure(options.output);
+    const tabId = await session.verify(url, host);
     console.log(`検証タブ: ${tabId}\n保存先: ${library}\n通常タブの保存先は変更していません。`);
+    if (process.argv[3]) {
+      const result = await session.run(process.argv[3], process.argv.slice(4));
+      if (result !== undefined) console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log('検証用 Chrome を保持しています。Ctrl+C で検証タブと Chrome を通常終了します。');
+      await waitForInterrupt();
+    }
   } finally {
-    await browser.close();
+    await session.release();
   }
 }
 main().catch((error) => {

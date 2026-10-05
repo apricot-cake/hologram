@@ -13,7 +13,7 @@ const { acquireExactRequestLock } = require('../native-host/request-lock.mts');
 const { extensionBuildStampPath } = require('../native-host/paths.mts');
 const { assertWindowsUserContext } = require('../native-host/windows-user-context.mts');
 const { buildExtension } = require('./build-extension.cts');
-const { DEFAULT_CDP_URL, cdpReady, configureDevelopmentExtension, reloadDevelopmentPages } = require('./lib-extension-profile.cts');
+const { developmentOptions, startDevelopmentBrowser } = require('./lib-dev-browser.cts');
 
 const ROOT = path.join(__dirname, '..');
 const SHARED_OUTPUT = path.join(ROOT, 'extension', '.output', 'chrome-mv3');
@@ -227,26 +227,34 @@ async function main(): Promise<void> {
   const publish = shouldPublish();
   let developmentOpen = false;
   let developmentChecked = false;
-  const result = await deployExtension({
-    output: SHARED_OUTPUT,
-    stamp: extensionBuildStampPath(),
-    build: (stage) => buildExtension('chrome', stage),
-    publish,
-    configure: publish
-      ? async (output) => {
-          if (!developmentChecked) {
-            developmentOpen = await cdpReady(DEFAULT_CDP_URL);
-            developmentChecked = true;
+  let session: any;
+  let result: Awaited<ReturnType<typeof deployExtension>>;
+  try {
+    result = await deployExtension({
+      output: SHARED_OUTPUT,
+      stamp: extensionBuildStampPath(),
+      build: (stage) => buildExtension('chrome', stage),
+      publish,
+      configure: publish
+        ? async (output) => {
+            if (!developmentChecked) {
+              const options = developmentOptions();
+              developmentOpen = true;
+              session = await startDevelopmentBrowser(options);
+              developmentChecked = true;
+            }
+            if (developmentOpen) await session.configure(output);
           }
-          if (developmentOpen) await configureDevelopmentExtension(output, DEFAULT_CDP_URL);
-        }
-      : undefined,
-    reloadPages: publish
-      ? async (output) => {
-          if (developmentOpen) await reloadDevelopmentPages(output, DEFAULT_CDP_URL);
-        }
-      : undefined,
-  });
+        : undefined,
+      reloadPages: publish
+        ? async (output) => {
+            if (developmentOpen) await session.reload(output);
+          }
+        : undefined,
+    });
+  } finally {
+    await session?.release();
+  }
   console.log(`[hologram] 検証済み共有リリースビルド ${result.buildId} を配備しました: ${SHARED_OUTPUT}`);
   if (!publish) console.log('[hologram] 連結されたworktreeのため、ブラウザへの告知を省略しました');
   else if (!developmentOpen) console.log('[hologram] 開発用Chromeは起動していないため、CDPでの読み込み直しを省略しました');

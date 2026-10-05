@@ -43,6 +43,7 @@
     "app:deploy": "node scripts/deploy-app.cts",
     "ext:dev:open": "node scripts/open-dev-profile.cts",
     "ext:dev:status": "node scripts/open-dev-profile.cts --print",
+    "ext:dev:run": "node scripts/run-dev-browser.cts",
     "ext:dev:open:marker": "node scripts/open-dev-profile.cts --marker",
     "ext:dev:register": "node scripts/register-dev-native-host.cts",
     "ext:tokens": "node scripts/gen-extension-tokens.cts",

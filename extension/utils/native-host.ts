@@ -5,8 +5,8 @@ export const DEVELOPMENT_NATIVE_HOST_PROFILE = 'development';
 
 // 同じリリースビルドを日常用と開発用の Chrome プロファイルで共有する。
 // 違うのはプロファイル自身の chrome.storage.local に置く役割だけである。
-// 開発用プロファイルは scripts/open-dev-profile.cts が CDP の
-// Extensions.setStorageItems で development を設定し、直後に同じ unpacked
+// 開発用プロファイルは scripts/open-dev-profile.cts が所有する pipe 接続で
+// Service Worker の storage.local に development を設定し、直後に同じ unpacked
 // 拡張機能を読み込み直す。日常用プロファイルにはキーを置かず、常に実ライブラリ
 // の host を使う。
 //

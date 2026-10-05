@@ -1,82 +1,70 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { stripTypeScriptTypes } from 'node:module';
-import vm from 'node:vm';
-import { describe, expect, test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
+const { main } = require('./open-dev-profile.cts');
+const { developmentChromeStatus } = require('./lib-chrome-command-line.cts');
+const options = { profile: 'C:\\dedicated', executablePath: 'chrome', output: 'build' };
 
-const source = fs.readFileSync(path.join(__dirname, 'open-dev-profile.cts'), 'utf8');
-
-function launcher(pid: number | null | Error, ready: boolean) {
-  const spawn = vi.fn(() => {
-    throw new Error('unexpected Chrome launch');
-  });
-  const configureDevelopmentExtension = vi.fn(async () => ({ path: 'shared-build' }));
-  const module: { exports: { main?: () => Promise<void> } } = { exports: {} };
-  const require = (name: string) => {
-    if (name === 'node:child_process') return { spawn };
-    if (name === 'node:fs') return { existsSync: () => true };
-    if (name === 'node:os') return { homedir: () => 'C:\\Users\\Jane Doe' };
-    if (name === 'node:path') return path;
-    if (name === './lib-extension-profile.cts') return { DEFAULT_CDP_URL: 'http://127.0.0.1:9223', cdpReady: async () => ready, configureDevelopmentExtension };
-    if (name === './lib-chrome-command-line.cts')
-      return {
-        runningChromePid: () => {
-          if (pid instanceof Error) throw pid;
-          return pid;
-        },
-      };
-    if (name === './lib-wait.cts') return {};
-    throw new Error(`Unexpected dependency ${name}`);
-  };
-  vm.runInNewContext(stripTypeScriptTypes(source), { require, module, __dirname, process: { argv: ['node', 'open-dev-profile.cts'], env: { HOLOGRAM_CHROME: 'chrome.exe' } }, console: { log: vi.fn(), error: vi.fn() } });
-  return { main: module.exports.main!, spawn, configureDevelopmentExtension };
-}
-
-test('起動済みプロファイルはウィンドウを追加せず CDP で共有ビルドを読み直す', async () => {
-  const run = launcher(7, true);
-  await run.main();
-  expect(run.spawn).not.toHaveBeenCalled();
-  expect(run.configureDevelopmentExtension).toHaveBeenCalledOnce();
+test.each([
+  { args: ['--remote-debugging-port=9223', '--remote-debugging-address=127.0.0.1'], expected: '警告: TCP 公開用', forbidden: 'TCP 公開なし', transport: 'tcp' },
+  { args: ['--remote-debugging-port=0', '--remote-debugging-pipe'], expected: '警告: TCP 公開用', forbidden: 'TCP 公開なし', transport: 'tcp' },
+  { args: ['--remote-debugging-address=0.0.0.0'], expected: '警告: TCP 公開用', forbidden: 'TCP 公開なし', transport: 'tcp' },
+  { args: ['--remote-debugging-pipe'], expected: 'pipe 起動（TCP 公開指定なし', forbidden: '警告: TCP 公開用', transport: 'pipe' },
+  { args: [], expected: '外部起動・未管理', forbidden: '管理された pipe', transport: 'unmanaged' },
+])('状態表示は実際の専用 Chrome の引数から $transport を判定する: $args', async ({ args, expected, forbidden, transport }) => {
+  const argv = process.argv;
+  const start = vi.fn();
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  process.argv = ['node', 'open-dev-profile.cts', '--print'];
+  const read = () => [
+    { ProcessId: 1, Args: ['chrome.exe', '--user-data-dir=C:\\daily', '--remote-debugging-port=9000'] },
+    { ProcessId: 2, Args: ['chrome.exe', '--user-data-dir=C:\\dedicated', '--type=renderer', '--remote-debugging-port=9001'] },
+    { ProcessId: 7, Args: ['chrome.exe', '--user-data-dir=C:\\dedicated', '--profile-directory=Default', ...args] },
+  ];
+  try {
+    await main({ options: () => options, status: (profile) => developmentChromeStatus(profile, read), start });
+    expect(start).not.toHaveBeenCalled();
+    expect(log.mock.calls[0][0]).toContain(expected);
+    expect(log.mock.calls[0][0]).not.toContain(forbidden);
+    expect(log.mock.calls[0][0]).toContain('pid 7');
+    expect(developmentChromeStatus(options.profile, read).transport).toBe(transport);
+  } finally {
+    process.argv = argv;
+    log.mockRestore();
+  }
 });
 
-test('プロセス一覧を取得できなければ、未起動として扱わずに停止する', async () => {
-  const run = launcher(new Error('CIM denied'), true);
-  await expect(run.main()).rejects.toThrow('プロセス一覧を確認できません');
-  expect(run.spawn).not.toHaveBeenCalled();
-  expect(run.configureDevelopmentExtension).not.toHaveBeenCalled();
+test('停止中は次回起動の設定として表示し、起動済みの安全性を表さない', async () => {
+  const argv = process.argv;
+  const start = vi.fn();
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  process.argv = ['node', 'open-dev-profile.cts', '--print'];
+  try {
+    await main({ options: () => options, status: (profile) => developmentChromeStatus(profile, () => []), start });
+    expect(start).not.toHaveBeenCalled();
+    expect(log.mock.calls[0][0]).toContain('起動中: いいえ');
+    expect(log.mock.calls[0][0]).toContain('停止中（次回起動の設定:');
+  } finally {
+    process.argv = argv;
+    log.mockRestore();
+  }
 });
 
-test('別のChromeが CDP ポートを使用中なら新しいウィンドウを開かない', async () => {
-  const run = launcher(null, true);
-  await expect(run.main()).rejects.toThrow('別のChrome');
-  expect(run.spawn).not.toHaveBeenCalled();
-});
-
-describe('開発用Chromeプロファイルの CDP 起動', () => {
-  test('CDP の接続先をローカル固定で定めている', () => {
-    expect(source).toMatch(/const CDP_ADDRESS = '127\.0\.0\.1';/);
-    expect(source).toMatch(/const CDP_PORT = 9223;/);
-  });
-
-  test('専用プロファイルと同時に CDP を起動する', () => {
-    expect(source).toContain('--user-data-dir=$' + '{PROFILE}');
-    expect(source).toContain('--remote-debugging-address=$' + '{CDP_ADDRESS}');
-    expect(source).toContain('--remote-debugging-port=$' + '{CDP_PORT}');
-  });
-
-  test('背面でも描画とタイマーを維持する', () => {
-    expect(source).toContain('--disable-backgrounding-occluded-windows');
-    expect(source).toContain('--disable-background-timer-throttling');
-    expect(source).toContain('--disable-renderer-backgrounding');
-  });
-
-  test('起動成功を CDP の応答で確認する', () => {
-    expect(source).toContain('await cdpReady(CDP_URL)');
-    expect(source).toContain('await waitFor(`開発用Chromeの CDP が $' + '{CDP_ADDRESS}:$' + '{CDP_PORT} で応答すること`');
-  });
-
-  test('日常用と同じリリースビルドを読み込み、開発用 Native Host を選ぶ', () => {
-    expect(source).toContain("path.join(ROOT, 'extension', '.output', 'chrome-mv3')");
-    expect(source).toContain('await configureDevelopmentExtension(OUTPUT, CDP_URL)');
-  });
+test('状態取得に失敗すれば未起動として扱わず、起動しない', async () => {
+  const argv = process.argv;
+  const start = vi.fn();
+  process.argv = ['node', 'open-dev-profile.cts', '--print'];
+  try {
+    await expect(
+      main({
+        options: () => options,
+        status: (profile) =>
+          developmentChromeStatus(profile, () => {
+            throw new Error('CIM denied');
+          }),
+        start,
+      }),
+    ).rejects.toThrow('CIM denied');
+    expect(start).not.toHaveBeenCalled();
+  } finally {
+    process.argv = argv;
+  }
 });
