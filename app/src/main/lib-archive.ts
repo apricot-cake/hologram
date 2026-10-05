@@ -742,12 +742,25 @@ async function extractLibraryEntries(zipfile: ZipReader) {
       isComplete = true; // 安全の絞り込みより前に立てる＝飛ばしたエントリも形式の判別には効く
       const name = libMatch[1];
       if (!isSafeLibraryPath(name)) continue; // Zip Slip: 区切り・遡り・絶対パスを断る（avatars/<name> と emoji/<name> は許す）
-      if (EXPORT_SKIP.has(name)) continue;
-      if (MERGERS[name] || name === 'collections.json' || name === 'classified-tags.json') {
+      const organizationName = Object.hasOwn(MERGERS, name) || name === 'collections.json' || name === 'classified-tags.json';
+      if (organizationName || EXPORT_SKIP.has(name)) {
         // 整理の JSON の枠 (#382) のうち、宣言された大きさに対する半分。上の汎用のエントリ
         // 単位の検査と同じく、展開が起きる前に断る。
         if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
-        orgEntries[name] = entry;
+        // 投稿 ID は整理ファイル名とも衝突しうる。JSON の識別子で振り分け、同名の投稿と
+        // 整理エントリが両方ある書庫でも投稿を落とさない。復号量は実サイズにも上限を掛ける。
+        const bytes = await readStreamCapped(await zipfile.openReadStreamPromise(entry), Math.min(MAX_ZIP_ORG_BYTES, MAX_ZIP_CAPTURE_JSON_BYTES));
+        let raw: unknown;
+        try {
+          raw = parseJsonLoose(bytes.toString('utf8'));
+        } catch {
+          raw = null;
+        }
+        if (raw && typeof raw === 'object' && !Array.isArray(raw) && Object.hasOwn(raw, 'captureId')) {
+          captureEntries.push({ name, entry });
+        } else if (!EXPORT_SKIP.has(name)) {
+          orgEntries[name] = entry;
+        }
       } else {
         if (name.toLowerCase().endsWith('.json') && size > MAX_ZIP_CAPTURE_JSON_BYTES) {
           throw new ZipLimitError('capture JSON entry "' + relPath + '" declares ' + size + ' bytes (> JSON cap ' + MAX_ZIP_CAPTURE_JSON_BYTES + ')');

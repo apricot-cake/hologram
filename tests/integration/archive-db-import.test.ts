@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
+import { ZipFile } from 'yazl';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { writeCompleteZip, ZipLimitError } from '../../app/src/main/lib-archive';
@@ -52,7 +53,94 @@ async function buildZip(entries: Record<string, string>) {
   return zipFileOf(Buffer.from(await zip.generateAsync({ type: 'nodebuffer' })));
 }
 
+async function buildZipWithRepeatedNames(entries: Array<[string, unknown]>) {
+  const zip = new ZipFile();
+  const chunks: Buffer[] = [];
+  const completed = new Promise<Buffer>((resolve, reject) => {
+    zip.outputStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    zip.outputStream.once('end', () => resolve(Buffer.concat(chunks)));
+    zip.outputStream.once('error', reject);
+    zip.once('error', reject);
+  });
+  for (const [name, value] of entries) zip.addBuffer(Buffer.from(JSON.stringify(value)), name);
+  zip.end();
+  return zipFileOf(await completed);
+}
+
 describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
+  test('collections という投稿IDも完全ZIPの再取り込みで欠落しない', async () => {
+    const stmts = preparePostStmts(handle.sqlite),
+      tags = makeTagResolver(handle.sqlite);
+    for (const captureId of ['collections', 'normal']) writePost(stmts, tags, { captureId, text: captureId });
+    const zipPath = path.join(mkTempDir('hologram-reserved-roundtrip-'), 'export.zip');
+    await writeCompleteZip(handle.sqlite, destFolder, null, zipPath);
+    const restored = openDatabase(path.join(mkTempDir('hologram-reserved-restored-'), 'test.db'));
+    try {
+      const result = await importCompleteZipToDb(restored.sqlite, zipPath, mkTempDir('hologram-reserved-media-'));
+      expect(result.ok).toBe(true);
+      expect(result.skipped).toBe(0);
+      expect(restored.sqlite.prepare('SELECT captureId,text FROM posts ORDER BY captureId').all()).toEqual([
+        { captureId: 'collections', text: 'collections' },
+        { captureId: 'normal', text: 'normal' },
+      ]);
+    } finally {
+      restored.sqlite.close();
+    }
+  });
+
+  test('整理情報と同名の投稿を完全ZIPへ書き出しても投稿と整理情報を両方復元する', async () => {
+    const ids = ['folders', 'tag-groups', 'ungrouped', 'manual-groups', 'poster-favorites', 'poster-folders', 'poster-tags', 'poster-profiles', 'classified-tags', 'config', 'tabs'];
+    const stmts = preparePostStmts(handle.sqlite),
+      tags = makeTagResolver(handle.sqlite);
+    for (const captureId of ids) writePost(stmts, tags, { captureId, text: captureId, tags: ['保持タグ'] });
+    const writer = createDbWriter(handle.sqlite);
+    writer.setFolders({ folders: [{ id: 'saved-folder', name: '保存フォルダー', items: ids }] });
+    writer.setUngrouped(['folders']);
+    writer.setManualGroups([['folders', 'tabs']]);
+    writer.fillTagGroupsByName({ 保持タグ: 'saved-group' }, { 'saved-group': '保存分類' });
+    writer.setPosterFolders({ folders: [{ id: 'saved-poster-folder', name: '作者フォルダー', items: ['saved-author'] }] });
+    writer.setPosterTags({ tags: { 'saved-author': ['作者タグ'] } });
+    writer.setPosterProfiles({ profiles: [PosterProfileSchema.parse({ posterKey: 'saved-author', contentHash: 'hash', provenance: 'fixture', firstObservedAt: '2026-01-01', lastObservedAt: '2026-01-01', displayName: '保存作者' })] });
+    writer.setTabs({ tabs: [{ id: 'saved-tab', pinned: false, title: '保存タブ', state: {} }], activeTabId: 'saved-tab' });
+    const zipPath = path.join(mkTempDir('hologram-collision-roundtrip-'), 'export.zip');
+    await writeCompleteZip(handle.sqlite, destFolder, null, zipPath);
+    const restored = openDatabase(path.join(mkTempDir('hologram-collision-restored-'), 'test.db'));
+    try {
+      const result = await importCompleteZipToDb(restored.sqlite, zipPath, mkTempDir('hologram-collision-media-'));
+      expect(result.ok).toBe(true);
+      expect(result.skipped).toBe(0);
+      expect(restored.sqlite.prepare('SELECT captureId,text FROM posts ORDER BY captureId').all()).toEqual([...ids].sort().map((captureId) => ({ captureId, text: captureId })));
+      const restoredWriter = createDbWriter(restored.sqlite);
+      expect(restoredWriter.getFolders()).toEqual(writer.getFolders());
+      expect(restoredWriter.getUngrouped()).toEqual(writer.getUngrouped());
+      expect(restoredWriter.getManualGroups()).toEqual(writer.getManualGroups());
+      expect(restoredWriter.getTagGroupNames()).toEqual(writer.getTagGroupNames());
+      expect(restoredWriter.getPosterFolders()).toEqual(writer.getPosterFolders());
+      expect(restoredWriter.getPosterTagNames()).toEqual(writer.getPosterTagNames());
+      expect(restoredWriter.getPosterProfiles()).toEqual(writer.getPosterProfiles());
+      expect(restoredWriter.getTabs()).toBeNull();
+    } finally {
+      restored.sqlite.close();
+    }
+  });
+
+  test.each([false, true])('同名ZIPエントリの順序にかかわらず旧整理情報と投稿を復元する（投稿先頭:%s）', async (postFirst) => {
+    const post: [string, unknown] = ['library/collections.json', { captureId: 'collections', text: '予約名の投稿' }];
+    const metadata: [string, unknown] = ['library/collections.json', { collections: [{ id: 'legacy-folder', name: '旧フォルダー', kind: 'static', items: ['collections'] }] }];
+    const zipPath = await buildZipWithRepeatedNames(postFirst ? [post, metadata] : [metadata, post]);
+    const result = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBe(0);
+    expect(handle.sqlite.prepare('SELECT captureId,text FROM posts').all()).toEqual([{ captureId: 'collections', text: '予約名の投稿' }]);
+    expect(createDbWriter(handle.sqlite).getFolders().folders).toMatchObject([{ id: 'legacy-folder', name: '旧フォルダー', items: ['collections'] }]);
+  });
+
+  test.each([null, 42, ''])('予約名ファイルの不正な投稿IDは整理情報として黙って無視しない: %s', async (captureId) => {
+    const zipPath = await buildZip({ 'library/collections.json': JSON.stringify({ captureId, text: '不正な投稿' }) });
+    await expect(importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).rejects.toThrow();
+    expect(handle.sqlite.prepare('SELECT captureId FROM posts').all()).toEqual([]);
+  });
+
   test('実 export の正規プロフィールを再取り込みし、投稿由来 stub より優先する', async () => {
     const raw = { captureId: 'roundtrip-author', platform: 'x', userId: 'author-roundtrip', screenName: 'roundtrip', text: '投稿', bio: '作者の自己紹介', profileLinks: [{ name: 'Website', value: 'https://example.test/author' }], banner: 'https://example.test/banner.png', bannerFile: 'banner.png' };
     writePost(preparePostStmts(handle.sqlite), makeTagResolver(handle.sqlite), raw);
