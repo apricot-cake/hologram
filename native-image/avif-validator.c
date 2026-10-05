@@ -164,6 +164,54 @@ static int supervise(const char *pid_text, const char *bytes_text) {
     }
     CloseHandle(job); CloseHandle(process); return status;
 }
+// 完成済みの隣接 tmp を非置換で公開する。MoveFileW は FAT / NTFS の双方で
+// 既存名を置換せず、媒体の途中状態を最終名へ公開しない。
+static int read_pipe_exact(HANDLE input, void *buffer, DWORD length) {
+    DWORD offset = 0;
+    while (offset < length) {
+        DWORD got = 0;
+        if (!ReadFile(input, (char *)buffer + offset, length - offset, &got, NULL) || !got) return 0;
+        offset += got;
+    }
+    return 1;
+}
+static wchar_t *publish_path(const char *text, DWORD size) {
+    if (memchr(text, 0, size)) return NULL;
+    int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, (int)size, NULL, 0);
+    if (length < 3 || length > 32760) return NULL;
+    wchar_t *path = calloc((size_t)length + 9, sizeof(wchar_t));
+    if (!path) return NULL;
+    // 長い絶対パスも Unicode Win32 path として扱う。
+    if (size >= 4 && memcmp(text, "\\\\?\\", 4) == 0) {
+        if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, (int)size, path, length)) { free(path); return NULL; }
+    } else if (size >= 2 && text[0] == '\\' && text[1] == '\\') {
+        memcpy(path, L"\\\\?\\UNC\\", 8 * sizeof(wchar_t));
+        if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text + 2, (int)size - 2, path + 8, length - 2)) { free(path); return NULL; }
+    } else {
+        if (text[1] != ':' || text[2] != '\\') { free(path); return NULL; }
+        memcpy(path, L"\\\\?\\", 4 * sizeof(wchar_t));
+        if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, (int)size, path + 4, length)) { free(path); return NULL; }
+    }
+    return path;
+}
+static int publish_server(void) {
+    HANDLE input = GetStdHandle(STD_INPUT_HANDLE), output = GetStdHandle(STD_OUTPUT_HANDLE);
+    for (;;) {
+        DWORD lengths[2];
+        if (!read_pipe_exact(input, lengths, sizeof(lengths))) return 0;
+        if (!lengths[0] || !lengths[1] || lengths[0] > 131072 || lengths[1] > 131072) return fail("invalid publish request size");
+        char *source_text = malloc(lengths[0]), *target_text = malloc(lengths[1]);
+        if (!source_text || !target_text) { free(source_text); free(target_text); return fail("publish allocation"); }
+        int read = read_pipe_exact(input, source_text, lengths[0]) && read_pipe_exact(input, target_text, lengths[1]);
+        wchar_t *source = read ? publish_path(source_text, lengths[0]) : NULL;
+        wchar_t *target = read ? publish_path(target_text, lengths[1]) : NULL;
+        free(source_text); free(target_text);
+        if (!source || !target) { free(source); free(target); return fail("invalid publish path"); }
+        DWORD result = MoveFileW(source, target) ? 0 : GetLastError(), written = 0;
+        free(source); free(target);
+        if (!WriteFile(output, &result, sizeof(result), &written, NULL) || written != sizeof(result)) return fail("publish response");
+    }
+}
 #endif
 static FILE *open_input(const char *path) {
 #ifdef _WIN32
@@ -256,6 +304,13 @@ static int validate_source(const uint8_t *bytes, size_t size, const Limits *limi
     avifDecoderDestroy(d); return ok ? 0 : 1;
 }
 static int validate_main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--publish-server") == 0) {
+#ifdef _WIN32
+        return publish_server();
+#else
+        return fail("file publication helper is supported only on Windows");
+#endif
+    }
     if (argc == 4 && strcmp(argv[1], "--supervise") == 0) {
 #ifdef _WIN32
         return supervise(argv[2], argv[3]);

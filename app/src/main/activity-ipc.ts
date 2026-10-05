@@ -16,7 +16,7 @@ export function isAdmittedLibraryIpc() {
 
 function isRelocationEntry(channel: IpcChannel) {
   // pick-save-folder は cloud 警告が無ければ同じ IPC の中で moveLibraryTo まで進む。
-  return channel === 'export-complete' || channel === 'move-save-folder' || channel === 'pick-save-folder' || channel === 'apply-repoint';
+  return channel === 'import-complete' || channel === 'export-complete' || channel === 'move-save-folder' || channel === 'pick-save-folder' || channel === 'apply-repoint';
 }
 
 const LIBRARY_INDEPENDENT_CHANNELS = ['open-external', 'copy-text', 'window-control', 'set-titlebar-symbol-dim', 'take-post-link', 'app-info', 'get-extension-contact', 'get-prefs', 'set-pref'] as const satisfies readonly IpcChannel[];

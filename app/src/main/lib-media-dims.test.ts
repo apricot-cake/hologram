@@ -9,7 +9,19 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { afterAll, describe, expect, test } from 'vitest';
-import { fillMediaDims } from './lib-media-dims.ts';
+import { fillMediaDims, fillMediaDimsAsync, MediaMeasurementCache } from './lib-media-dims.ts';
+
+test('非同期集計は 256 件以降も測り、キャッシュを有限に保つ', async () => {
+  const folder = mkFolder();
+  fs.writeFileSync(path.join(folder, 'small.png'), makePng(1, 2));
+  fs.writeFileSync(path.join(folder, 'largest.png'), makePng(30, 40));
+  const rec = { media: [...Array.from({ length: 300 }, () => ({ file: 'small.png' })), { file: 'largest.png' }] };
+  const cache = new MediaMeasurementCache({ maxEntries: 1, maxKeyBytes: 4096 });
+  const result = await fillMediaDimsAsync(folder, rec, cache);
+  expect(result).toMatchObject({ mediaMaxW: 30, mediaMaxH: 40, mediaMaxBytes: fs.statSync(path.join(folder, 'largest.png')).size });
+  expect(cache.size).toBeLessThanOrEqual(1);
+  expect(cache.keyBytes).toBeLessThanOrEqual(4096);
+});
 
 // --- 寸法を実際に測れる本物の PNG（clipboard-intake.test.ts が使うのと同じ小さな
 // エンコーダ。readImageDims はヘッダを読むので、スタブではなく中身のあるバイト列が要る）。---

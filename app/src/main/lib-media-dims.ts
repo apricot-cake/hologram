@@ -34,7 +34,147 @@
 // lib-card-dims.ts と同じく Electron に依存しない（fs だけ）ので、素の node で単体テストできる。
 
 import fs from 'node:fs';
+import path from 'node:path';
+import { imageSize } from './lib-imgsize.ts';
 import { cardImageFile, readImageDims, resolveWithin, IMG_EXT } from './lib-card-dims.ts';
+
+type MediaMeasurement = { bytes: number; width: number; height: number; cacheable?: boolean };
+
+// ZIP 全体で共有しても入力の参照数に比例して育ち続けない、小さな LRU。完了済みの通常ファイル
+// だけを保持し、missing/directory は保持しない。処理中の promise は別に持つので、同じバッチ内の
+// alias は重複計測しない一方、こちらも fillMediaDimsAsync の同時実行数（16）を越えて増えない。
+class MediaMeasurementCache {
+  readonly maxEntries: number;
+  readonly maxKeyBytes: number;
+  readonly maxSingleKeyBytes: number;
+  private readonly settled = new Map<string, { value: MediaMeasurement; keyBytes: number }>();
+  private readonly inFlight = new Map<string, Promise<MediaMeasurement>>();
+  keyBytes = 0;
+
+  constructor({ maxEntries = 512, maxKeyBytes = 64 * 1024, maxSingleKeyBytes = 4096 }: { maxEntries?: number; maxKeyBytes?: number; maxSingleKeyBytes?: number } = {}) {
+    this.maxEntries = Math.max(0, maxEntries);
+    this.maxKeyBytes = Math.max(0, maxKeyBytes);
+    this.maxSingleKeyBytes = Math.max(0, maxSingleKeyBytes);
+  }
+
+  get size(): number {
+    return this.settled.size;
+  }
+
+  measure(identity: string, work: () => Promise<MediaMeasurement>): Promise<MediaMeasurement> {
+    const hit = this.settled.get(identity);
+    if (hit) {
+      this.settled.delete(identity);
+      this.settled.set(identity, hit);
+      return Promise.resolve(hit.value);
+    }
+    const pending = this.inFlight.get(identity);
+    if (pending) return pending;
+    const task = work().then(
+      (value) => {
+        this.inFlight.delete(identity);
+        if (value.cacheable) this.remember(identity, value);
+        return value;
+      },
+      (error) => {
+        this.inFlight.delete(identity);
+        throw error;
+      },
+    );
+    this.inFlight.set(identity, task);
+    return task;
+  }
+
+  private remember(identity: string, value: MediaMeasurement): void {
+    const keyBytes = Buffer.byteLength(identity);
+    if (!this.maxEntries || keyBytes > this.maxSingleKeyBytes || keyBytes > this.maxKeyBytes) return;
+    while (this.settled.size >= this.maxEntries || this.keyBytes + keyBytes > this.maxKeyBytes) {
+      const oldest = this.settled.entries().next().value as [string, { value: MediaMeasurement; keyBytes: number }] | undefined;
+      if (!oldest) break;
+      this.settled.delete(oldest[0]);
+      this.keyBytes -= oldest[1].keyBytes;
+    }
+    this.settled.set(identity, { value, keyBytes });
+    this.keyBytes += keyBytes;
+  }
+}
+
+// ZIP 取り込みでは同じ実ファイルを別表記で参照するレコードがあり得る。解決後の絶対パスを
+// identity にすることで、`image.png` と `image.png/.` のどちらが先でも同じ計測を再利用する。
+// 拡張子の判定も必ずこの正規化済み identity に対して行う。cache key だけ正規化して元の file で
+// 判定すると、先に別名を見た順序によって null が正規名の結果を汚染するためである。
+async function measureMedia(folder: string, file: string, cache: MediaMeasurementCache): Promise<MediaMeasurement> {
+  if (!file) return { bytes: 0, width: 0, height: 0 };
+  const full = resolveWithin(folder, file);
+  if (!full) return { bytes: 0, width: 0, height: 0 };
+  const identity = path.normalize(full);
+  return cache.measure(identity, async () => {
+    let bytes = 0;
+    try {
+      const stat = await fs.promises.stat(identity);
+      if (!stat.isFile()) return { bytes: 0, width: 0, height: 0 };
+      bytes = stat.size;
+    } catch {
+      return { bytes: 0, width: 0, height: 0 };
+    }
+    if (!IMG_EXT.test(identity)) return { bytes, width: 0, height: 0, cacheable: true };
+    try {
+      const handle = await fs.promises.open(identity, 'r');
+      try {
+        const header = Buffer.alloc(262144);
+        const { bytesRead } = await handle.read(header, 0, header.length, 0);
+        const dim = imageSize(header.subarray(0, bytesRead));
+        return { bytes, width: dim?.width || 0, height: dim?.height || 0, cacheable: true };
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      return { bytes, width: 0, height: 0, cacheable: true };
+    }
+  });
+}
+
+// 大きな ZIP のための非同期版。全項目を集計し、件数 cap で結果を切り捨てない。一度に発行する
+// filesystem work だけを有限にし、各バッチの後でイベントループへ明示的に譲る。cache は ZIP
+// 全体で共有でき、同一実ファイルの stat/header 読みを重複させない。
+async function fillMediaDimsAsync<T extends { media?: unknown; image?: string | null; mediaMaxW?: number | null; mediaMaxH?: number | null; mediaMaxBytes?: number | null; shotW?: number | null; shotH?: number | null }>(
+  folder: string | null | undefined,
+  rec: T,
+  cache: MediaMeasurementCache = new MediaMeasurementCache(),
+): Promise<T> {
+  if (!rec || rec.mediaMaxW != null || !folder) return rec;
+  const media = Array.isArray(rec.media) ? (rec.media as Array<{ file?: string; width?: number | null; height?: number | null }>).filter((m) => m && m.file) : [];
+  if (!media.length) {
+    rec.mediaMaxW = rec.shotW && rec.shotW > 0 ? rec.shotW : 0;
+    rec.mediaMaxH = rec.shotH && rec.shotH > 0 ? rec.shotH : 0;
+    rec.mediaMaxBytes = (await measureMedia(folder, cardImageFile(rec), cache)).bytes;
+    return rec;
+  }
+  let maxW = 0;
+  let maxH = 0;
+  let maxBytes = 0;
+  const batchSize = 16;
+  for (let start = 0; start < media.length; start += batchSize) {
+    const batch = media.slice(start, start + batchSize);
+    const measurements = await Promise.all(batch.map((m) => measureMedia(folder, m.file as string, cache)));
+    for (let i = 0; i < batch.length; i++) {
+      const m = batch[i];
+      const measured = measurements[i];
+      if (measured.bytes > maxBytes) maxBytes = measured.bytes;
+      if (measured.width > 0 && measured.height > 0) {
+        if (m.width == null) m.width = measured.width;
+        if (m.height == null) m.height = measured.height;
+        if (measured.width > maxW) maxW = measured.width;
+        if (measured.height > maxH) maxH = measured.height;
+      }
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  rec.mediaMaxW = maxW;
+  rec.mediaMaxH = maxH;
+  rec.mediaMaxBytes = maxBytes;
+  return rec;
+}
 
 // `file`（`folder` からの相対）のバイト数。読めないときやフォルダの外にあるときは 0＝
 // resolveWithin は readImageDims が使うのと同じ zip-slip の番人で、ここでも同じ理由から必要。
@@ -86,4 +226,4 @@ function fillMediaDims<T extends { media?: unknown; image?: string | null; media
   return rec;
 }
 
-export { fillMediaDims, fileBytes };
+export { fillMediaDims, fillMediaDimsAsync, fileBytes, MediaMeasurementCache };

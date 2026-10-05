@@ -369,10 +369,7 @@ function register(ctx: IpcContext) {
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const zipPath = res.filePaths[0];
     try {
-      const handle = await ensurePostsSynced();
-      if (!handle) return { ok: false, error: 'no-folder' };
-      const out = await archive.importCompleteZipToDb(handle.sqlite, zipPath, getSaveFolder());
-      return out;
+      return await ctx.importCompleteArchive(zipPath, getSaveFolder());
     } catch (err) {
       return { ok: false, error: err.message };
     }

@@ -21,7 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterEach, describe, expect, test } from 'vitest';
-import { importCompleteZipToDb } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { postsFromDb } from '../../app/src/main/lib-db-query';
 import { listTrashIndexRecords, listTrashRecords } from '../../app/src/main/lib-trash-capture';

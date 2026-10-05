@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { imageSize } from 'image-size';
 import { configDir } from './native-host';
 import { createJobPool } from './lib-job-pool';
+import { superviseProcess } from './utility-process-supervisor';
 import { IMAGE_PROCESSING_LIMITS as limits, ImageProcessingRequestSchema, type ImageProcessingResult } from './image-processing-contract';
 
 export interface ImageOptions {
@@ -138,42 +139,6 @@ async function validateAvif(inputPath: string): Promise<z.infer<typeof NativeRes
   });
 }
 
-async function superviseProcess(pid: number): Promise<ChildProcessWithoutNullStreams> {
-  if (process.platform !== 'win32') throw new Error('Image process supervision unavailable');
-  const supervisor = spawn(nativeExecutable(), ['--supervise', String(pid), String(1024 * 1024 * 1024)], { windowsHide: true, stdio: 'pipe' });
-  supervisor.stdin.on('error', () => {});
-  supervisor.stderr.on('data', () => {});
-  await new Promise<void>((resolve, reject) => {
-    let output = '';
-    let ready = false;
-    const timer = setTimeout(() => {
-      supervisor.kill();
-      reject(new Error('Image supervisor unavailable'));
-    }, 5_000);
-    supervisor.stdout.on('data', (chunk: Buffer) => {
-      output += chunk.toString('utf8');
-      if (!ready && output === 'READY\n') {
-        ready = true;
-        clearTimeout(timer);
-        resolve();
-      } else if (output.length > 64) {
-        clearTimeout(timer);
-        supervisor.kill();
-        reject(new Error('Invalid supervisor response'));
-      }
-    });
-    supervisor.once('error', (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    supervisor.once('close', () => {
-      clearTimeout(timer);
-      if (!ready) reject(new Error('Image supervisor exited'));
-    });
-  });
-  return supervisor;
-}
-
 async function getSharpProcess(): Promise<UtilityProcess> {
   if (sharpIdleTimer) clearTimeout(sharpIdleTimer);
   sharpProcess ??= new Promise<UtilityProcess>((resolve, reject) => {
@@ -186,10 +151,10 @@ async function getSharpProcess(): Promise<UtilityProcess> {
     worker.once('spawn', async () => {
       clearTimeout(timer);
       try {
-        const supervisor = await superviseProcess(worker.pid as number);
+        const supervisor = await superviseProcess(worker.pid as number, nativeExecutable());
         sharpSupervisor = supervisor;
         worker.once('exit', () => supervisor.stdin.destroy());
-        supervisor.once('close', () => {
+        void supervisor.closed.then(() => {
           worker.kill();
           if (sharpSupervisor === supervisor) sharpSupervisor = undefined;
         });
@@ -276,8 +241,9 @@ async function browserFrame(inputPath: string, outputPath: string, metadata: { w
       if (error.code !== 'EEXIST') throw error;
     });
     await win.loadURL(pathToFileURL(bootstrap).href);
-    supervisor = await superviseProcess(win.webContents.getOSProcessId());
-    supervisor.once('close', () => {
+    const attachedSupervisor = await superviseProcess(win.webContents.getOSProcessId(), nativeExecutable());
+    supervisor = attachedSupervisor;
+    void attachedSupervisor.closed.then(() => {
       if (!win.isDestroyed()) win.destroy();
     });
     const data = await win.webContents.executeJavaScript(
