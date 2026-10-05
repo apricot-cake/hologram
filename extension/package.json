@@ -18,13 +18,13 @@
   "dependencies": {
     "@marbec/web-auto-extractor": "2.2.1",
     "entities": "8.1.0",
-    "lucide": "^1.47.0",
+    "lucide": "^1.50.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/chrome": "^0.3.0",
+    "@types/chrome": "^0.3.4",
     "typescript": "^7.0.2",
-    "vite": "8.3.1",
+    "vite": "8.3.2",
     "wxt": "0.21.4"
   }
 }
