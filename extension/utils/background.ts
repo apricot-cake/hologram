@@ -1423,7 +1423,7 @@ export function startBackground(): void {
   // 古いものを落とす。
   function stashLogLocally(entry) {
     try {
-      const key = `${DIAG_PREFIX}${entry.ts}_${Math.floor(Math.random() * 1e6)}`;
+      const key = `${DIAG_PREFIX}${entry.ts}_${crypto.randomUUID()}`;
       chrome.storage.local.set({ [key]: entry }, () => {
         void chrome.runtime.lastError; // クォータなど set のエラーは無視する
         scheduleDiagMaintenance();

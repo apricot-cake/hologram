@@ -229,6 +229,7 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
 
   test('大量の失敗ログは永続予約後に200件まで受理し、全件走査を集約する', async () => {
     vi.useFakeTimers();
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
     try {
       for (let i = 0; i < 500; i++) env.dispatch({ type: 'logCapture', entry: { stage: 'unknown', phase: 'fail', error: 'own-' + i } });
       await vi.advanceTimersByTimeAsync(0);
@@ -237,10 +238,12 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
       expect(sets.at(-1)).toHaveProperty('captureLogRateState.suppressed', 300);
       const entries = Object.entries(env.storage).filter(([key]) => key.startsWith('diaglog_'));
       expect(entries).toHaveLength(200);
+      expect(new Set(entries.map(([, entry]) => (entry as { error: string }).error)).size).toBe(200);
       expect(env.storageGets.filter((key) => key === null)).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(1000);
       expect(env.storageGets.filter((key) => key === null)).toHaveLength(1);
     } finally {
+      random.mockRestore();
       vi.useRealTimers();
     }
   });
