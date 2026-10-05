@@ -179,17 +179,25 @@ describe('実 Git とステージ済み内容の整形', () => {
       stage(directory, changesFormatting ? 'export const a=2;\n' : 'export const a = 2;\n');
       const ready = path.join(directory, 'ready');
       const release = path.join(directory, 'release');
-      const formatter = fakeFormatter(directory, `const fs=require('node:fs'); fs.writeFileSync('entry.ts','export const a = 2;\\n'); fs.writeFileSync(${JSON.stringify(ready)},'ready'); const watcher=fs.watch(${JSON.stringify(directory)},()=>{if(fs.existsSync(${JSON.stringify(release)})){watcher.close();}});`);
+      const formatter = fakeFormatter(
+        directory,
+        `const fs=require('node:fs'); fs.writeFileSync('entry.ts','export const a = 2;\\n'); fs.writeFileSync(${JSON.stringify(ready)},'ready'); const finish=()=>{if(fs.existsSync(${JSON.stringify(release)})){watcher.close();}}; const watcher=fs.watch(${JSON.stringify(directory)},finish); finish();`,
+      );
       const running = runPreCommit({ cwd: directory, formatter });
       const result = running.catch((error: Error) => error);
-      await vi.waitFor(() => expect(fs.existsSync(ready)).toBe(true));
-      stage(directory, 'export const a = 9;\n');
-      const concurrent = index(directory);
-      fs.writeFileSync(release, 'continue');
-      expect(await result).toBeInstanceOf(Error);
-      expect(index(directory)).toEqual(concurrent);
-      expect(git(directory, ['show', ':entry.ts'])).toBe('export const a = 9;\n');
-      expect(fs.existsSync(path.join(directory, '.git', 'index.lock'))).toBe(false);
+      try {
+        await vi.waitFor(() => expect(fs.existsSync(ready)).toBe(true), { timeout: 10_000 });
+        stage(directory, 'export const a = 9;\n');
+        const concurrent = index(directory);
+        fs.writeFileSync(release, 'continue');
+        expect(await result).toBeInstanceOf(Error);
+        expect(index(directory)).toEqual(concurrent);
+        expect(git(directory, ['show', ':entry.ts'])).toBe('export const a = 9;\n');
+        expect(fs.existsSync(path.join(directory, '.git', 'index.lock'))).toBe(false);
+      } finally {
+        fs.writeFileSync(release, 'continue');
+        await result;
+      }
     },
     30_000,
   );
