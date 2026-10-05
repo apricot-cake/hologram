@@ -53,6 +53,46 @@ async function buildZip(entries: Record<string, string>) {
 }
 
 describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
+  test('投稿サイドカーだけにある作者情報と既存の所属を私有 DB 経由でも保持する', async () => {
+    const writer = createDbWriter(handle.sqlite);
+    writePost(preparePostStmts(handle.sqlite), makeTagResolver(handle.sqlite), { captureId: 'existing', text: '既存投稿' });
+    writer.setFolders({ folders: [{ id: 'existing-folder', name: '既存フォルダー', items: ['existing'] }] });
+    // 旧書庫の所属 ID は、取り込み先の既存グループを参照する。
+    handle.sqlite.prepare('INSERT INTO manual_groups(id) VALUES(?)').run(7);
+    handle.sqlite.prepare('INSERT INTO manual_group_items(groupId,postId,seq) VALUES(?,?,?)').run(7, 'existing', 0);
+    const rec = {
+      captureId: 'sidecar-only',
+      platform: 'x',
+      userId: 'author',
+      screenName: 'author',
+      text: '投稿',
+      capturedAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      bio: '自己紹介',
+      banner: 'https://example.test/banner.png',
+      bannerFile: 'banner.png',
+      profileLinks: [{ name: 'Website', value: 'https://example.test/author' }],
+      folders: ['existing-folder'],
+      manualGroups: [{ groupId: 7, seq: 1 }],
+      userKind: 'plain',
+      tagReviewed: true,
+      localViewCount: 9,
+      lastViewedAt: '2026-01-02T00:00:00Z',
+    };
+    const zipPath = await buildZip({ 'library/sidecar-only.json': JSON.stringify(rec) });
+    expect((await importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).ok).toBe(true);
+    const profile = handle.sqlite.prepare('SELECT bio,banner,bannerFile FROM poster_profiles WHERE userId=?').get('author');
+    expect(profile).toEqual({ bio: '自己紹介\nhttps://example.test/author', banner: rec.banner, bannerFile: rec.bannerFile });
+    expect(writer.getFolders().folders[0].items).toEqual(['existing', 'sidecar-only']);
+    expect(writer.getManualGroups().groups).toEqual([['existing', rec.captureId]]);
+    expect(writer.getPostFlags(rec.captureId)).toMatchObject({ userKind: 'plain', tagReviewed: true });
+    expect(handle.sqlite.prepare('SELECT localViewCount,lastViewedAt FROM posts WHERE captureId=?').get(rec.captureId)).toEqual({ localViewCount: 9, lastViewedAt: rec.lastViewedAt });
+    // 同じ captureId の入力は、作者情報・所属・閲覧状態も既存値を上書きしない。
+    await importCompleteZipToDb(handle.sqlite, await buildZip({ 'library/sidecar-only.json': JSON.stringify({ ...rec, bio: '上書き候補', folders: [], manualGroups: [], localViewCount: 0 }) }), destFolder);
+    expect(handle.sqlite.prepare('SELECT bio,banner,bannerFile FROM poster_profiles WHERE userId=?').get('author')).toEqual(profile);
+    expect(writer.getFolders().folders[0].items).toEqual(['existing', 'sidecar-only']);
+    expect(handle.sqlite.prepare('SELECT localViewCount FROM posts WHERE captureId=?').get(rec.captureId)).toEqual({ localViewCount: 9 });
+  });
   test.each(['deep', 'wide'])('過大な旧検索木（%s）は取り込みを拒否し、既存 DB を保持する', async (shape) => {
     let tree: unknown = { kind: 'cond', type: 'collection', value: 'source' };
     if (shape === 'deep') {

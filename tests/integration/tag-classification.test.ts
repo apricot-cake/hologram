@@ -137,6 +137,7 @@ test('ZIPの往復で所属作品、作品なし、手動付与と未使用タ�
     const writer = createDbWriter(destination.sqlite);
     expect(writer.getPostFlags('p')?.tagClassification).toEqual(createDbWriter(handle.sqlite).getPostFlags('p')?.tagClassification);
     expect(writer.tagVocabOverview().some((row) => row.name === '未使用キャラ' && row.category === 'character')).toBe(true);
+    expect(destination.sqlite.prepare("SELECT name FROM tags WHERE category='general'").all()).toEqual([]);
     writer.setClassifiedAssignments([{ postId: 'p', tagIds: [] }]);
     expect(writer.getPostFlags('p')?.tags).toEqual([]);
   } finally {

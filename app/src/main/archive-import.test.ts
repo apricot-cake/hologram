@@ -1,9 +1,12 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, expect, test, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 const state = vi.hoisted(() => ({ events: [] as string[], failApply: false, failCleanup: false, earlySupervisorClose: false, prepareGate: undefined as (() => void) | undefined }));
 vi.mock('electron', () => ({
-  app: { isPackaged: false, getAppPath: () => '/test/app' },
+  app: { isPackaged: false, getAppPath: () => '/test/app', getPath: () => '/test/profile' },
   utilityProcess: {
     fork: () => {
       const child = new EventEmitter() as EventEmitter & { pid: number; kill: () => void; postMessage: (request: any) => void };
@@ -24,6 +27,12 @@ vi.mock('electron', () => ({
     },
   },
 }));
+vi.mock('./archive-stage-ownership', () => ({
+  createArchiveStage: async () => ({ stage: await fs.mkdtemp(path.join(os.tmpdir(), 'hologram-archive-import-test-')), close: async () => {} }),
+  registerArchiveActor: async () => 'actor',
+  removeOwnedArchiveStage: async (stage: string) => fs.rm(stage, { recursive: true, force: true }),
+  recoverArchiveStages: vi.fn(),
+}));
 vi.mock('./utility-process-supervisor', () => ({
   superviseProcess: async () => {
     const supervisor = new EventEmitter() as EventEmitter & { stdin: { destroy: () => void }; closed: Promise<void> };
@@ -41,7 +50,8 @@ vi.mock('./utility-process-supervisor', () => ({
     return supervisor;
   },
 }));
-import { runCompleteArchiveImport } from './archive-import';
+import { runCompleteArchiveImport, recoverCompleteArchiveImports } from './archive-import';
+import { recoverArchiveStages } from './archive-stage-ownership';
 
 afterEach(() => {
   state.events.length = 0;
@@ -49,6 +59,7 @@ afterEach(() => {
   state.failCleanup = false;
   state.earlySupervisorClose = false;
   state.prepareGate = undefined;
+  vi.mocked(recoverArchiveStages).mockReset();
 });
 function boundary() {
   return {
@@ -109,4 +120,31 @@ test('準備中の二重取り込みを拒否する', async () => {
   state.prepareGate = undefined;
   reply();
   expect((await first).ok).toBe(true);
+});
+
+test('startup回収は現設定以外の同profile libraryもworkerへ送り終了確認する', async () => {
+  const cleaned: string[] = [];
+  vi.mocked(recoverArchiveStages).mockImplementation(async (_profile, verify, cleanup) => {
+    for (const destination of ['/old-library', '/current-library']) {
+      const manifest = { version: 1 as const, id: '00000000-0000-4000-8000-000000000000', profile: '/test/profile', destination, libraryId: destination, actors: [] };
+      expect(await verify(manifest)).toBe(true);
+      await cleanup('/owned-stage', manifest);
+      cleaned.push(destination);
+    }
+    return cleaned.length;
+  });
+  expect(await recoverCompleteArchiveImports()).toBe(2);
+  expect(cleaned).toEqual(['/old-library', '/current-library']);
+  expect(state.events.filter((event) => event === 'job-closed')).toHaveLength(2);
+});
+
+test('startup worker清掃失敗時にも停止を確認しstage保持をhelperへ委ねる', async () => {
+  state.failCleanup = true;
+  vi.mocked(recoverArchiveStages).mockImplementation(async (_profile, _verify, cleanup) => {
+    await expect(cleanup('/owned-stage', { version: 1, id: '00000000-0000-4000-8000-000000000000', profile: '/test/profile', destination: '/old-library', libraryId: 'old', actors: [] })).rejects.toThrow('archive-worker-exited');
+    return 0;
+  });
+  expect(await recoverCompleteArchiveImports()).toBe(0);
+  expect(state.events).toContain('job-closed');
+  expect(state.events).not.toContain('db-reopen');
 });

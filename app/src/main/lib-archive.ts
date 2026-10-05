@@ -884,6 +884,9 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   const dbWriter = createDbWriter(sqlite);
   // 空の私有 DB の FK によって、既存ライブラリだけにある投稿への参照を失わない。
   sqlite.exec('CREATE TABLE IF NOT EXISTS archive_org (name TEXT PRIMARY KEY, json TEXT NOT NULL)');
+  // UI の読み取りモデルに含まれない投稿・作者情報と所属も、worker 内で保持する。
+  sqlite.exec('CREATE TABLE IF NOT EXISTS archive_records (captureId TEXT PRIMARY KEY, json TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0)');
+  const storeRecord = sqlite.prepare('INSERT INTO archive_records(captureId,json) VALUES(?,?)');
   const storeOrg = sqlite.prepare('INSERT OR REPLACE INTO archive_org(name,json) VALUES(?,?)');
   const rememberOrg = (name: string, value: unknown) => storeOrg.run(name, JSON.stringify(value));
   const existingIds = new Set((sqlite.prepare('SELECT captureId FROM posts').all() as Array<{ captureId: string }>).map((r) => r.captureId));
@@ -904,6 +907,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     // 完全ZIPは投稿データとして取り込む。書庫の置換指示で既存投稿を削除しない。
     // 私有 DB には入力値を保持する。非置換公開後、実際の宛先媒体を worker が計測する。
     writePost(stmts, resolveTagId, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags, replaces: null });
+    storeRecord.run(rec.captureId, JSON.stringify({ ...rec, replaces: null }));
     dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
     existingIds.add(rec.captureId);
     imported++;

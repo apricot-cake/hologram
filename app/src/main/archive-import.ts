@@ -1,12 +1,11 @@
 import { app, utilityProcess } from 'electron';
 import { randomUUID } from 'node:crypto';
-import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ARCHIVE_IMPORT_IDLE_MS, ARCHIVE_IMPORT_MEMORY_BYTES, ArchiveImportReply } from './archive-import-contract';
 import type { CompleteImportResult } from './ipc-payloads';
 import { superviseProcess } from './utility-process-supervisor';
+import { createArchiveStage, registerArchiveActor, removeOwnedArchiveStage, recoverArchiveStages, type OwnedArchiveStage } from './archive-stage-ownership';
 
 let active = false;
 interface Boundary {
@@ -17,8 +16,9 @@ interface Boundary {
   finish(owner: number): Promise<void>;
 }
 
-async function startWorker(executable: string) {
-  const child = utilityProcess.fork(path.join(path.dirname(fileURLToPath(import.meta.url)), 'archive-import-worker.js'), [], { serviceName: 'Hologram archive import', stdio: 'ignore' });
+async function startWorker(executable: string, stage: string) {
+  const actor = await registerArchiveActor(stage);
+  const child = utilityProcess.fork(path.join(path.dirname(fileURLToPath(import.meta.url)), 'archive-import-worker.js'), [`--hologram-archive-stage=${stage}`, `--hologram-archive-actor=${actor}`], { serviceName: 'Hologram archive import', stdio: 'ignore' });
   let exited = false;
   const exitPromise = new Promise<void>((resolve) =>
     child.once('exit', () => {
@@ -112,6 +112,7 @@ export async function runCompleteArchiveImport(zipPath: string, folder: string, 
   if (active) return { ok: false, error: 'import-busy' };
   active = true;
   let stage: string | undefined;
+  let stageOwner: OwnedArchiveStage | undefined;
   let worker: Awaited<ReturnType<typeof startWorker>> | undefined;
   let owner: number | null = null;
   const id = randomUUID();
@@ -119,8 +120,9 @@ export async function runCompleteArchiveImport(zipPath: string, folder: string, 
   let result: CompleteImportResult = { ok: false, error: 'archive-import-failed' };
   try {
     const identity = boundary.getLibraryIdentity();
-    stage = await fs.mkdtemp(path.join(os.tmpdir(), 'hologram-archive-import-'));
-    worker = await startWorker(executable);
+    stageOwner = await createArchiveStage(app.getPath('userData'), folder, identity);
+    stage = stageOwner.stage;
+    worker = await startWorker(executable, stage);
     result = await worker.request(id, { id, phase: 'prepare', zipPath, stage, executable }, 'prepared');
     if (result.ok) {
       owner = await boundary.pause();
@@ -138,7 +140,7 @@ export async function runCompleteArchiveImport(zipPath: string, folder: string, 
     // Job Object が子プロセスを止め終わるまで、DB を再開しない。
     await worker?.stop();
     if (stage && owner !== null) {
-      const cleanup = await startWorker(executable);
+      const cleanup = await startWorker(executable, stage);
       try {
         await cleanup.request(id, { id, phase: 'cleanup', stage, destination: folder }, 'done');
       } finally {
@@ -146,12 +148,41 @@ export async function runCompleteArchiveImport(zipPath: string, folder: string, 
       }
     }
     if (owner !== null) await boundary.finish(owner);
-    if (stage) await fs.rm(stage, { recursive: true, force: true });
+    if (stage) await removeOwnedArchiveStage(stage);
   } catch (error) {
     // 終了・清掃を確認できなければ所有権と journal を保持する。
     result = { ok: false, error: error instanceof Error ? error.message : 'archive-cleanup-failed' };
   } finally {
-    active = false;
+    try {
+      await stageOwner?.close();
+    } finally {
+      active = false;
+    }
   }
   return result;
+}
+
+export async function recoverCompleteArchiveImports(): Promise<number> {
+  if (active) return 0;
+  active = true;
+  try {
+    const executable = app.isPackaged ? path.join(process.resourcesPath, 'avif', 'avif-validator.exe') : path.join(app.getAppPath(), 'vendor', 'avif', 'avif-validator.exe');
+    return await recoverArchiveStages(
+      app.getPath('userData'),
+      // 同profileの所有物。宛先UUIDはworkerが各manifest.destinationのDBで再検証する。
+      async () => true,
+      async (stage, manifest) => {
+        const worker = await startWorker(executable, stage);
+        try {
+          const id = randomUUID();
+          const result = await worker.request(id, { id, phase: 'cleanup', stage, destination: manifest.destination }, 'done');
+          if (!result.ok) throw new Error('archive-recovery-cleanup-failed');
+        } finally {
+          await worker.stop();
+        }
+      },
+    );
+  } finally {
+    active = false;
+  }
 }

@@ -9,7 +9,7 @@ import { receivePostLink, registerPostLinkProtocol } from './post-link.ts';
 import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
-import { runCompleteArchiveImport } from './archive-import';
+import { runCompleteArchiveImport, recoverCompleteArchiveImports } from './archive-import';
 import { appActivity } from './app-activity.ts';
 import { runLibraryBackgroundTask, waitForLibraryBackgroundIdle } from './lib-library-background-activity.ts';
 import { runAdmittedLibraryOperation } from './lib-library-admission.ts';
@@ -1254,6 +1254,8 @@ if (!gotSingleInstanceLock) {
     } catch {
       /* 無視する */
     }
+    // 強制終了した取り込みの所有journalだけを回収する。active actorはOS leaseで保持する。
+    void recoverCompleteArchiveImports().catch((error) => log.warn('Archive import recovery failed:', error));
     // 開発サーバーとサンドボックスの実行は保存しないので、host の登録を飛ばす＝HKCU への
     // 書き込みも、共有の設定ディレクトリへの native-host のコピーも無い。
     if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) {

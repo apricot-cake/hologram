@@ -4,14 +4,16 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { openDatabase } from './lib-db';
-import { prepareZipIntoEmptyDatabase, mergeFolders, mergeUngrouped, mergeManualGroups, mergePosterFolders, mergePosterTags, mergePosterProfiles, mergeTagGroups, toSidecarJson } from './lib-archive';
-import { postsByIdsSync, postCapturedVia } from './lib-db-query';
+import { prepareZipIntoEmptyDatabase, mergeFolders, mergeUngrouped, mergeManualGroups, mergePosterFolders, mergePosterTags, mergePosterProfiles, mergeTagGroups } from './lib-archive';
 import { createDbWriter } from './lib-db-write';
 import { preparePostStmts, makeTagResolver, writePost } from './lib-db-record-writer';
-import { exportTagClassification, importClassifiedTagVocabulary } from './lib-tag-classification';
+import { importClassifiedTagVocabulary } from './lib-tag-classification';
+import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
+import { PostFlagsSchema } from '../shared/data-schemas';
 import { createArchiveFilePublisher } from './archive-file-publisher';
 import { fillCardDims } from './lib-card-dims';
 import { fillMediaDimsAsync, MediaMeasurementCache } from './lib-media-dims';
+import { readArchiveStageManifest } from './archive-stage-ownership';
 
 export async function prepareArchiveImport(zipPath: string, stage: string) {
   await fs.promises.mkdir(path.join(stage, 'library'), { recursive: true });
@@ -67,15 +69,17 @@ export async function applyArchiveImport(sqlite: Database.Database, stage: strin
       stagedWriter = createDbWriter(prepared);
     const measurements = new MediaMeasurementCache();
     // 同名媒体の skip も反映した宛先を測る。共有 DB の transaction へ await を持ち込まない。
-    const nextPost = prepared.prepare('SELECT captureId FROM posts WHERE isContext=0 AND (? IS NULL OR captureId>?) ORDER BY captureId LIMIT 1');
+    const nextPost = prepared.prepare('SELECT captureId,json FROM archive_records WHERE (? IS NULL OR captureId>?) ORDER BY captureId LIMIT 1');
+    const updateRecord = prepared.prepare('UPDATE archive_records SET json=? WHERE captureId=?');
     let cursor: string | null = null;
     for (;;) {
-      const row = nextPost.get(cursor, cursor) as { captureId: string } | undefined;
+      const row = nextPost.get(cursor, cursor) as { captureId: string; json: string } | undefined;
       if (!row) break;
       cursor = row.captureId;
-      const view = postsByIdsSync(prepared, [row.captureId])[0];
-      const rec = { ...toSidecarJson(view, postCapturedVia(prepared, [row.captureId]).get(row.captureId) ?? null), replaces: null, tagClassification: exportTagClassification(prepared, row.captureId) };
-      writePost(stagedStmts, stagedTags, await fillMediaDimsAsync(destination, fillCardDims(destination, rec), measurements));
+      const rec = parseImportRecord(row.json);
+      const measured = await fillMediaDimsAsync(destination, fillCardDims(destination, rec), measurements);
+      const normalized = writePost(stagedStmts, stagedTags, { ...measured, tags: rec.tagClassification?.generalTags ?? rec.tags });
+      updateRecord.run(JSON.stringify({ ...normalized, ...PostFlagsSchema.parse(rec), replaces: null }), row.captureId);
       stagedWriter.restorePostFlags(row.captureId, rec);
       progress();
     }
@@ -90,16 +94,23 @@ export async function applyArchiveImport(sqlite: Database.Database, stage: strin
         return row ? JSON.parse(row.json) : fallback();
       };
       const exists = sqlite.prepare('SELECT 1 FROM posts WHERE captureId=?');
+      prepared.exec('UPDATE archive_records SET applied=0');
+      const markApplied = prepared.prepare('UPDATE archive_records SET applied=1 WHERE captureId=?');
       importClassifiedTagVocabulary(sqlite, prepared.prepare("SELECT t.name,t.category,w.name AS workName FROM tags t LEFT JOIN tags w ON w.id=t.workId WHERE t.category!='general'").all() as Array<{ name: string; category: 'character' | 'work'; workName: string | null }>);
-      for (const row of prepared.prepare('SELECT captureId FROM posts WHERE isContext=0').iterate() as Iterable<{ captureId: string }>) {
+      let appliedCursor: string | null = null;
+      for (;;) {
+        const row = nextPost.get(appliedCursor, appliedCursor) as { captureId: string; json: string } | undefined;
+        if (!row) break;
+        appliedCursor = row.captureId;
         if (exists.get(row.captureId)) {
           skipped++;
           continue;
         }
-        const view = postsByIdsSync(prepared, [row.captureId])[0];
-        const rec = { ...toSidecarJson(view, postCapturedVia(prepared, [row.captureId]).get(row.captureId) ?? null), replaces: null, tagClassification: exportTagClassification(prepared, row.captureId) };
-        writePost(stmts, tags, rec);
+        const rec = parseImportRecord(row.json);
+        writePost(stmts, tags, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags });
+        // 既存グループの数値 ID は、整理情報の統合で再採番される前に参照する。
         target.restorePostFlags(row.captureId, rec);
+        markApplied.run(row.captureId);
         imported++;
         progress();
       }
@@ -111,6 +122,8 @@ export async function applyArchiveImport(sqlite: Database.Database, stage: strin
       target.setPosterProfiles(mergePosterProfiles(target.getPosterProfiles(), incoming('poster-profiles', source.getPosterProfiles)));
       const groups = mergeTagGroups(target.getTagGroupNames(), incoming('tag-groups', source.getTagGroupNames));
       target.fillTagGroupsByName(groups.memberships, groups.labels ?? null);
+      // 新たなフォルダーは統合後に参照する。再採番される手動グループ ID は再適用しない。
+      for (const row of prepared.prepare('SELECT captureId,json FROM archive_records WHERE applied=1').iterate() as Iterable<{ captureId: string; json: string }>) target.restorePostFlags(row.captureId, { folders: parseImportRecord(row.json).folders });
     })();
     return { ok: true as const, notComplete: false as const, imported, skipped };
   } finally {
@@ -119,18 +132,171 @@ export async function applyArchiveImport(sqlite: Database.Database, stage: strin
   }
 }
 
+function parseImportRecord(json: string) {
+  const raw = JSON.parse(json);
+  return { ...PostRecordInputSchema.parse(raw), ...PostFlagsSchema.parse(raw), replaces: null };
+}
+
 export async function cleanupArchiveImport(stage: string, destination: string) {
   if (!fs.existsSync(path.join(stage, 'prepared.sqlite'))) return;
+  const root = path.resolve(destination);
+  await assertCleanupDirectories(path.parse(root).root, root);
+  const realRoot = await fs.promises.realpath(root);
+  if (canonicalPath(realRoot) !== canonicalPath(root)) throw new Error('invalid-import-cleanup-owner');
+  // 製品の stage は永続 manifest にあるライブラリとだけ照合する。
+  // manifest を持たない直接テストの一時 stage とは区別する。
+  if (/^[0-9a-f-]{36}$/.test(path.basename(stage))) {
+    const owner = await readArchiveStageManifest(stage);
+    if (canonicalPath(owner.destination) !== canonicalPath(realRoot)) throw new Error('invalid-import-cleanup-owner');
+    const library = path.join(root, 'hologram.db');
+    const stat = await fs.promises.lstat(library);
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('invalid-import-cleanup-owner');
+    const current = openDatabase(library, { readonly: true }).sqlite;
+    try {
+      const identity = current.prepare('SELECT value FROM store_state WHERE key=?').get('libraryId') as { value: string } | undefined;
+      if (identity?.value !== owner.libraryId) throw new Error('invalid-import-cleanup-owner');
+    } finally {
+      current.close();
+    }
+  }
+  const stageDb = await fs.promises.lstat(path.join(stage, 'prepared.sqlite'));
+  if (stageDb.isSymbolicLink() || !stageDb.isFile()) throw new Error('invalid-import-cleanup-owner');
   const db = openDatabase(path.join(stage, 'prepared.sqlite'), { readonly: true }).sqlite;
   try {
     if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name='media_publications'").get()) return;
     for (const row of db.prepare('SELECT tmp FROM media_publications').iterate() as Iterable<{ tmp: string }>) {
       const file = path.resolve(row.tmp);
-      if (!file.startsWith(path.resolve(destination) + path.sep) || !/^\.hologram-import-[0-9a-f-]{36}\.tmp$/.test(path.basename(file))) throw new Error('invalid-import-cleanup-owner');
-      await fs.promises.rm(file, { force: true });
+      if (!canonicalPath(file).startsWith(canonicalPath(root) + path.sep) || !/^\.hologram-import-[0-9a-f-]{36}\.tmp$/.test(path.basename(file))) throw new Error('invalid-import-cleanup-owner');
+      try {
+        await assertCleanupDirectories(root, path.dirname(file));
+        const stat = await fs.promises.lstat(file);
+        if (stat.isSymbolicLink() || !stat.isFile() || canonicalPath(await fs.promises.realpath(file)) !== canonicalPath(file)) throw new Error('invalid-import-cleanup-owner');
+        await fs.promises.unlink(file);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
     }
   } finally {
     db.close();
+  }
+}
+
+const canonicalPath = (file: string) => (process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file));
+async function assertCleanupDirectories(root: string, directory: string) {
+  const relative = path.relative(root, directory);
+  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error('invalid-import-cleanup-owner');
+  let current = root;
+  for (const part of ['', ...relative.split(path.sep).filter(Boolean)]) {
+    current = path.join(current, part);
+    const stat = await fs.promises.lstat(current);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('invalid-import-cleanup-owner');
+  }
+}
+
+// 呼び出し側が stage と全 actor の OS lease を排他取得した後に使う。
+// 外部ライブラリを変更せず、再試行に必要な journal を残して展開容量を回収する。
+export async function compactArchiveImportStage(stage: string) {
+  await readArchiveStageManifest(stage);
+  await assertCleanupDirectories(path.parse(path.resolve(stage)).root, path.resolve(stage));
+  const library = path.join(stage, 'library');
+  try {
+    await assertNoLinksInStage(library);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const sourcePath = path.join(stage, 'prepared.sqlite');
+  const compactPath = path.join(stage, 'prepared-journal.sqlite');
+  const regular = async (file: string) => {
+    const stat = await fs.promises.lstat(file);
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('invalid-import-compaction-owner');
+  };
+  let source: Database.Database | undefined;
+  try {
+    await regular(sourcePath);
+    for (const suffix of ['-wal', '-shm']) {
+      try {
+        await regular(sourcePath + suffix);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    source = openDatabase(sourcePath).sqlite;
+    const checkpoint = source.pragma('wal_checkpoint(TRUNCATE)') as Array<{ busy: number }>;
+    if (checkpoint.some((row) => row.busy !== 0) || source.pragma('journal_mode = DELETE', { simple: true }) !== 'delete') throw new Error('archive-compaction-checkpoint-busy');
+  } catch (error) {
+    source?.close();
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    source = undefined;
+  }
+  try {
+    // 前回の中断で残った私有候補は、元 DB を保持したまま作り直す。
+    for (const suffix of ['', '-wal', '-shm', '-journal']) {
+      try {
+        await regular(compactPath + suffix);
+        await fs.promises.unlink(compactPath + suffix);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    const compact = openDatabase(compactPath).sqlite;
+    try {
+      if (compact.pragma('journal_mode = DELETE', { simple: true }) !== 'delete') throw new Error('archive-compaction-journal-mode');
+      compact.pragma('synchronous = FULL');
+      compact.exec('CREATE TABLE media_publications(tmp TEXT PRIMARY KEY)');
+      if (source?.prepare("SELECT 1 FROM sqlite_master WHERE name='media_publications'").get()) {
+        const next = source.prepare('SELECT tmp FROM media_publications WHERE (? IS NULL OR tmp>?) ORDER BY tmp LIMIT 1');
+        const insert = compact.prepare('INSERT INTO media_publications(tmp) VALUES(?)');
+        let cursor: string | null = null;
+        const copyBatch = compact.transaction(() => {
+          for (let count = 0; count < 100; count++) {
+            const row = next.get(cursor, cursor) as { tmp: string } | undefined;
+            if (!row) return false;
+            cursor = row.tmp;
+            insert.run(row.tmp);
+          }
+          return true;
+        });
+        while (copyBatch()) await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    } finally {
+      compact.close();
+    }
+    source?.close();
+    source = undefined;
+    for (const file of [sourcePath, compactPath]) {
+      try {
+        const handle = await fs.promises.open(file, 'r+');
+        try {
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      for (const suffix of ['-wal', '-shm', '-journal']) if (fs.existsSync(file + suffix)) throw new Error('archive-compaction-sidecar-retained');
+    }
+    await fs.promises.rename(compactPath, sourcePath);
+    const committed = await fs.promises.open(sourcePath, 'r+');
+    try {
+      await committed.sync();
+    } finally {
+      await committed.close();
+    }
+    await fs.promises.rm(library, { recursive: true, force: true });
+    await fs.promises.rm(path.join(stage, 'prepared-stats.json'), { force: true });
+  } finally {
+    source?.close();
+  }
+}
+
+async function assertNoLinksInStage(directory: string) {
+  const stat = await fs.promises.lstat(directory);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('invalid-import-compaction-owner');
+  const entries = await fs.promises.opendir(directory);
+  for await (const entry of entries) {
+    if (entry.isSymbolicLink()) throw new Error('invalid-import-compaction-owner');
+    if (entry.isDirectory()) await assertNoLinksInStage(path.join(directory, entry.name));
   }
 }
 
