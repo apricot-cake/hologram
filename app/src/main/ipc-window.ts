@@ -5,10 +5,12 @@
 // asset:// のプロトコル経由で、ライブラリの画像1枚を専用のウィンドウへ出す。copy-image は
 // ライブラリの原本画像をデコードしてクリップボードへ渡す（#132）。Electron の基本要素はここで
 // 改めて import する。getSaveFolder と APP_ICON は ctx 経由で届く。
-import { shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
-import { ipcMain } from './activity-ipc.ts';
+import { shell, BrowserWindow, clipboard, screen } from 'electron';
+import { hideBackgroundWindows } from './background-launch.ts';
+import { ipcMain, runWhenLibraryAdmissionOpen } from './activity-ipc.ts';
 import { isViewerImageName, libraryFilePath, libraryStoragePath } from './library-files.ts';
 import { copyLibraryImage } from './image-clipboard.ts';
+import { getPreparedImage } from './image-processing.ts';
 import { takePostLink } from './post-link.ts';
 import type { IpcContext } from './ipc-context.ts';
 
@@ -18,7 +20,7 @@ function register(ctx: IpcContext) {
 
   // Ctrl+Shift+N（#32 St1）。`handle` ではなく `on`＝レンダラーは待つものの無いキーボードの
   // 操作を転送するだけ。
-  ipcMain.on('open-new-window', () => openNewWindow());
+  ipcMain.on('open-new-window', () => runWhenLibraryAdmissionOpen(openNewWindow));
   // 以下のハンドラはどれもライブラリのファイルをアプリの外の何かへ渡すので、自分でパスを
   // 繋ぐのではなく、全部が唯一の書き出しのゲート（library-files.ts）を通して解決する。
   const exportPath = (file: unknown) => libraryFilePath(file, getSaveFolder());
@@ -48,15 +50,17 @@ function register(ctx: IpcContext) {
   // をライブラリ自身のオリジンの最上位の文書に変えることで、SVG ではその文書がスクリプトを
   // 含むものになる。断るときは false を返す。copy-image が「このファイルは表示できない」に
   // 既に使っているのと同じ形。
-  ipcMain.handle('open-image-window', (_event, image) => {
+  ipcMain.handle('open-image-window', async (_event, image) => {
     if (!isViewerImageName(image)) return false;
     const source = exportPath(image);
     if (!source) return false;
+    const prepared = await getPreparedImage(source, { kind: 'preview' });
+    if (!prepared) return false;
     // ウィンドウの大きさを画像の縦横比に合わせる（作業領域の約85%に収める）。
     let width = 1100;
     let height = 850;
     try {
-      const sz = nativeImage.createFromPath(source).getSize();
+      const sz = prepared;
       if (sz.width > 0 && sz.height > 0) {
         const wa = screen.getPrimaryDisplay().workAreaSize;
         const scale = Math.min(1, (wa.width * 0.85) / sz.width, (wa.height * 0.85) / sz.height);
@@ -64,7 +68,7 @@ function register(ctx: IpcContext) {
         height = Math.max(240, Math.round(sz.height * scale));
       }
     } catch {
-      /* 既定のままにする（nativeImage が復号できない webp など） */
+      /* 画面寸法を取得できない場合は既定のままにする */
     }
     const w = new BrowserWindow({
       width,
@@ -73,7 +77,7 @@ function register(ctx: IpcContext) {
       // ウィンドウを隠して作る＝検証の実行が、開発者の使っている画面を乗っ取ってはいけない。
       // ウィンドウは今までどおり文書を読み込んで動かすので、上の asset:// の防ぎは端から端まで
       // 試験できる。
-      show: process.env.HOLOGRAM_SMOKE !== '1' && process.env.HOLOGRAM_E2E_HIDDEN !== '1',
+      show: process.env.HOLOGRAM_SMOKE !== '1' && !hideBackgroundWindows(process.argv, process.env),
       useContentSize: true,
       autoHideMenuBar: true,
       backgroundColor: '#101113',

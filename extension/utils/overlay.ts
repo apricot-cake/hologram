@@ -62,7 +62,8 @@
 // overlay/control.ts（host＋ディスク＋どの面を描くか）。このファイル
 // はコントローラだ: それらを組み立て、設定と保存フローを持ち、複数の
 // モジュールに同時に手を伸ばす唯一の場所になっている。
-import { newSaveId, reportSaveTimeout } from './capture-log.ts';
+import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
+import { guardCaughtException } from './uncaught-report.ts';
 import { makePostLink } from '../../app/src/shared/post-link.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
@@ -75,13 +76,14 @@ import { ensureTokens, motion, prefersReducedMotion } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 import type { SavePostMessage, SaveResponse } from './messages.ts';
 import { CONTROL_SIZE } from './overlay/constants.ts';
-import { celebrateSave, clearControls, drawFace, faceFor, makeControlHost, removeControl } from './overlay/control.ts';
+import { celebrateSave, clearControls, drawEmptyFace, drawFace, faceFor, makeControlHost, removeControl } from './overlay/control.ts';
 import * as positioning from './overlay/positioning.ts';
 import { addSavedPictures, createSavedQuery, permalinkOf } from './overlay/saved-state.ts';
 import { createTracker } from './overlay/tracker.ts';
 import type { Anchor, MarkMode, Phase, UnitState } from './overlay/types.ts';
 
 let overlayActive = false;
+declare const __EXT_TEST__: boolean | undefined;
 
 export async function startOverlay(): Promise<() => void> {
   const MARK_MODE_KEY = 'savedBadgeMode'; // chrome.storage.local、'always' | 'hover' | 'off'
@@ -132,6 +134,13 @@ export async function startOverlay(): Promise<() => void> {
   let repositionFrame: number | null = null;
   let repositionFull = false;
   let hovered: Anchor | null = null;
+  let hoveredPost: { unit: Element; url: string | null } | null = null;
+  let delegatedHover: Anchor | null = null;
+  let delegatedHoverFrame: number | null = null;
+  type ControlPress = { anchor: Anchor; button: number; control: Anchor['control']; face: Anchor['face']; identity: string; media: Element | null; chorded: boolean };
+  let completedPress: (ControlPress & { pointerId: number; activate: boolean }) | null = null;
+  const activePresses = new Map<number, ControlPress>();
+  let testSaveStarts = 0;
   let pointerPosition: { x: number; y: number } | null = null;
   let scrollHoverTimer: ReturnType<typeof setTimeout> | null = null;
   const activeScrollTargets = new Set<EventTarget>();
@@ -148,6 +157,48 @@ export async function startOverlay(): Promise<() => void> {
 
   const { getMessage: t, saveFailureText, skewSaveText } = await createI18n();
   const toasts = new SaveToasts(t);
+
+  // closed shadow を open に戻さず実ブラウザで検証するための test build 専用
+  // RPC。ページ world には公開せず、release build では define の false に
+  // よって分岐全体が除去される。
+  const onTestMessage = (message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
+    if (!message || typeof message !== 'object' || (message as { type?: string }).type !== 'overlayTestSnapshot') return false;
+    const controls: Array<Record<string, unknown>> = [];
+    for (const [unit, state] of tracker.tracked) {
+      for (const anchor of state.anchors.values()) {
+        if (!anchor.el || !anchor.control) continue;
+        const rect = anchor.control.getBoundingClientRect();
+        const style = getComputedStyle(anchor.control);
+        controls.push({
+          face: anchor.face,
+          hostShadowRootExposed: anchor.el.shadowRoot !== null,
+          hostFaceExposed: anchor.el.hasAttribute('data-hologram-face'),
+          tag: anchor.control.tagName,
+          label: anchor.control.getAttribute('aria-label'),
+          tabIndex: anchor.control.tabIndex,
+          role: anchor.control.getAttribute('role'),
+          display: style.display,
+          radius: style.borderRadius,
+          background: style.backgroundColor,
+          border: style.borderTopWidth,
+          shadow: style.boxShadow,
+          transform: style.transform,
+          glyphs: anchor.control.querySelectorAll('svg').length,
+          titled: anchor.el.hasAttribute('title') || anchor.control.hasAttribute('title'),
+          focused: anchor.root?.activeElement === anchor.control,
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          hostRect: (() => {
+            const value = anchor.el?.getBoundingClientRect();
+            return value ? { x: value.x, y: value.y, width: value.width, height: value.height } : null;
+          })(),
+          unitId: unit.id || null,
+        });
+      }
+    }
+    sendResponse({ controls, saveStarts: testSaveStarts });
+    return false;
+  };
+  if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) chrome.runtime.onMessage.addListener(onTestMessage);
 
   // === 設定 ===
 
@@ -206,7 +257,10 @@ export async function startOverlay(): Promise<() => void> {
     {
       onAnchorRemoved(anchor) {
         removeControl(anchor);
-        if (hovered === anchor) hovered = null;
+        if (hovered === anchor) {
+          hovered = null;
+          hoveredPost = null;
+        }
       },
       onEnter(unit, state) {
         // 答えがまだ分からない間も描く: それによって投稿の画像がホ
@@ -233,11 +287,15 @@ export async function startOverlay(): Promise<() => void> {
         // が、静止したポインタがその下を通り過ぎるすべての画像を拾っ
         // てしまっていた原因だ（#347）。
         updateHoveredAtPointer(!inScrollBurst && layoutMayAdoptHovered);
+        scheduleDelegatedHover();
         savedQuery.scheduleQuery();
       },
       onMutation(contentChanged, modalChanged, records) {
         if (hovered && (contentChanged || modalChanged)) {
-          if (!hovered.box.isConnected) rehomeHover(hovered);
+          if (!hoveredPost?.url || permalinkOf(content, hoveredPost.unit) !== hoveredPost.url) {
+            layoutMayAdoptHovered = false;
+            setHovered(null);
+          } else if (!hovered.box.isConnected) rehomeHover(hovered);
           else if (!positioning.pointerStillOn(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
         }
         // 投稿ユニット自身が残ったまま、その中の media だけが差し替わる
@@ -246,6 +304,7 @@ export async function startOverlay(): Promise<() => void> {
         // 切断済みの古い箱が Anchor に残り続ける。変更を含む画面上のユ
         // ニットだけを再描画し、新しい箱と投稿 identity を同期する。
         if (contentChanged) repaintMutatedVisible(records);
+        scheduleDelegatedHover();
       },
     },
   );
@@ -278,18 +337,22 @@ export async function startOverlay(): Promise<() => void> {
   // こで後始末すると、それを見せるのと同じジェスチャーでボタンを消し
   // てしまい、ユーザーの押下（ユーザーに何かを伝えられる唯一のイベン
   // ト）が起きようがなくなる。
-  const onPointerMove = (e: Event) => {
+  const onPointerMove = guardCaughtException(logSaveEvent, 'content', 'overlay-pointermove', (e: Event) => {
     const pe = e as PointerEvent;
     pointerPosition = { x: pe.clientX, y: pe.clientY };
     layoutMayAdoptHovered = true;
     updateHoveredAtPointer(true);
-  };
-  const onPointerOut = (e: Event) => {
+    updateDelegatedHover(pe);
+  });
+  const onPointerOut = guardCaughtException(logSaveEvent, 'content', 'overlay-pointerout', (e: Event) => {
     if (!(e as PointerEvent).relatedTarget) {
+      resetPresses();
+      delegatedHover?.control?.onpointerleave?.call(delegatedHover.control, e as PointerEvent);
+      delegatedHover = null;
       pointerPosition = null;
       setHovered(null); // ポインタが document を離れた
     }
-  };
+  });
   document.addEventListener('pointermove', onPointerMove, true);
   document.addEventListener('pointerout', onPointerOut, true);
 
@@ -303,7 +366,135 @@ export async function startOverlay(): Promise<() => void> {
     }
   }
 
+  // host は履歴状態にかかわらず pointer-events:none に固定する。空の面なら
+  // ブラウザが選んだページ本来の target・trusted event・修飾キー・button・
+  // contextmenu をそのまま通し、可視面がある24pxだけを座標で拡張機能の操作
+  // として委譲する。`.click()` で別イベントを合成しないことが重要である。
+  function controlAtPoint(event: { clientX: number; clientY: number }): Anchor | null {
+    for (const anchor of visibleAnchors()) {
+      if (!anchor.face || !anchor.el) continue;
+      const rect = anchor.el.getBoundingClientRect();
+      const textAnchor = anchor.kind === 'text' ? site.textAnchorIn?.(anchor.box) : null;
+      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom && positioning.controlPointIsOwned(anchor, event.clientX, event.clientY, site.pointerOverlayInMedia, textAnchor)) return anchor;
+    }
+    return null;
+  }
+
+  // host が pointer-events:none でも、closed tree 内の面に従来あった glow と
+  // scale は座標委譲できる。状態をページ側の属性や cursor style へ写さず、
+  // closed tree の要素だけを変える。実際の hit target はページ要素なので、内部
+  // button の cursor:pointer は表示カーソルを変えるものとは数えない。
+  function updateDelegatedHover(event: MouseEvent | PointerEvent) {
+    const next = controlAtPoint(event);
+    // paint() は同じ Anchor/control を再利用しながら基礎 style と handler を
+    // 初期化し直すことがある。同じ面内で次の pointermove が来た場合も enter を
+    // 再適用し、履歴上同じ Anchor だったことだけで feedback を省略しない。
+    if (next === delegatedHover) {
+      next?.control?.onpointerenter?.call(next.control, event as PointerEvent);
+      return;
+    }
+    delegatedHover?.control?.onpointerleave?.call(delegatedHover.control, event as PointerEvent);
+    delegatedHover = next;
+    delegatedHover?.control?.onpointerenter?.call(delegatedHover.control, event as PointerEvent);
+  }
+
+  function scheduleDelegatedHover() {
+    if (delegatedHoverFrame !== null) return;
+    delegatedHoverFrame = requestAnimationFrame(() => {
+      delegatedHoverFrame = null;
+      if (!pointerPosition) return;
+      // 内部 handler への座標通知だけで、ページへ入力イベントを dispatch しない。
+      updateDelegatedHover(new PointerEvent('pointermove', { clientX: pointerPosition.x, clientY: pointerPosition.y }));
+    });
+  }
+
+  function controlIdentity(anchor: Anchor): string {
+    const found = tracker.anchorOf.get(anchor.box);
+    const media = positioning.postMediaIn(anchor.box);
+    return JSON.stringify([found ? permalinkOf(content, found.unit) : null, media ? mediaKeysOf(media, content.platform) : [], media?.getAttribute('src'), media?.getAttribute('srcset'), media?.getAttribute('poster')]);
+  }
+
+  function pressStillMatches(press: ControlPress, anchor: Anchor | null) {
+    return !press.chorded && press.anchor === anchor && press.control === anchor?.control && press.face === anchor?.face && press.media === positioning.postMediaIn(press.anchor.box) && press.identity === controlIdentity(press.anchor);
+  }
+
+  function resetPresses() {
+    activePresses.clear();
+    completedPress = null;
+  }
+
+  const onDelegatedPointerEvent = guardCaughtException(logSaveEvent, 'content', 'overlay-control-event', (event: Event) => {
+    if (!(event instanceof MouseEvent) || !event.isTrusted) return;
+    // detail=0 の keyboard activation は本物の shadow button が受け持つ。
+    if (event.type === 'click' && event.detail === 0) return;
+    const pointer = event as PointerEvent;
+    const pointerId = pointer.pointerId ?? 1;
+    const anchor = controlAtPoint(event);
+    if (event.type === 'pointercancel') {
+      activePresses.delete(pointerId);
+      completedPress = null;
+      return;
+    }
+    if (event.type === 'pointerdown') {
+      completedPress = null;
+      activePresses.delete(pointerId);
+      if (!anchor) return;
+      activePresses.set(pointerId, { anchor, button: event.button, control: anchor.control, face: anchor.face, identity: controlIdentity(anchor), media: positioning.postMediaIn(anchor.box), chorded: false });
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.button === 0) anchor.control?.onpointerdown?.call(anchor.control, pointer);
+      return;
+    }
+    if (event.type === 'pointerup') {
+      const press = activePresses.get(pointerId);
+      activePresses.delete(pointerId);
+      if (!press) return;
+      completedPress = { ...press, button: event.button, pointerId, activate: press.button === event.button && pressStillMatches(press, anchor) };
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.type === 'contextmenu') {
+      // contextmenu は OS により pointerup より先にも後にも届く。
+      if (pointer.pointerId === -1 || (!anchor && !activePresses.has(pointerId) && completedPress?.pointerId !== pointerId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.type !== 'click' && event.type !== 'auxclick') return;
+    // 同時押しでは最後のボタンの解放まで pointerup が来ない。途中の
+    // click/auxclick も claim 済みの操作として消費し、保存にはしない。
+    const activePress = activePresses.get(pointerId);
+    if (activePress) {
+      activePress.chorded = true;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    const press = completedPress;
+    completedPress = null;
+    if (!press || press.pointerId !== pointerId || press.button !== event.button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!anchor || event.type !== 'click' || event.button !== 0 || !press.activate || !pressStillMatches(press, anchor)) return;
+    anchor.control?.onclick?.call(anchor.control, pointer);
+  });
+  const delegatedEventTypes = ['pointerdown', 'pointerup', 'pointercancel', 'click', 'auxclick', 'contextmenu'];
+  for (const type of delegatedEventTypes) document.addEventListener(type, onDelegatedPointerEvent, true);
+  const onInputInterrupted = () => {
+    resetPresses();
+    if (document.hidden || !document.hasFocus()) {
+      pointerPosition = null;
+      delegatedHover?.control?.onpointerleave?.call(delegatedHover.control, new PointerEvent('pointerleave'));
+      delegatedHover = null;
+    }
+  };
+  addEventListener('blur', onInputInterrupted);
+  document.addEventListener('visibilitychange', onInputInterrupted);
+
   function setHovered(next: Anchor | null) {
+    const found = next ? tracker.anchorOf.get(next.box) : null;
+    hoveredPost = found ? { unit: found.unit, url: permalinkOf(content, found.unit) } : null;
     if (next === hovered) return;
     const previous = hovered;
     hovered = next;
@@ -316,12 +507,15 @@ export async function startOverlay(): Promise<() => void> {
   // て変わった場合。そのときはすでにホバーされている画像が、ポインタ
   // がその上にある限り操作を保持し、別の画像がそれを奪うことはできな
   // い。
-  function updateHoveredAtPointer(adopt: boolean) {
+  function updateHoveredAtPointer(adopt: boolean, unit?: Element) {
     if (!pointerPosition) {
       setHovered(null);
       return;
     }
-    const next = positioning.anchorAtPoint(visibleAnchors(), pointerPosition.x, pointerPosition.y);
+    // 再描画時は元投稿の候補だけを見る。全投稿から勝者を選んでから
+    // 除外すると、重なった元投稿の有効な箱も取り逃す。
+    const anchors = unit ? [...visibleAnchors()].filter((anchor) => tracker.anchorOf.get(anchor.box)?.unit === unit) : visibleAnchors();
+    const next = positioning.anchorAtPoint(anchors, pointerPosition.x, pointerPosition.y);
     if (next && positioning.modalCovers(next)) {
       setHovered(null);
       return;
@@ -343,15 +537,19 @@ export async function startOverlay(): Promise<() => void> {
   // に座ったままになっていたからだ（#347）。
   function rehomeHover(anchor: Anchor) {
     const found = tracker.anchorOf.get(anchor.box);
+    const previousPost = hoveredPost;
+    // 後続の intersection や再配置も、新しい投稿への入力とは扱わない。
+    layoutMayAdoptHovered = false;
     setHovered(null);
     // 投稿自体も消えていた（フィードが再描画ではなくリサイクルしてい
     // た）: 今ポインタの下にあるのは別の投稿の画像であり、それにボタ
     // ンを渡すことは、まさにスクロールのルールが禁じていることにな
     // る。次のポインタの動きに任せる。
-    if (!found || !found.unit.isConnected) return;
+    if (!found || !found.unit.isConnected || !previousPost?.url || previousPost.unit !== found.unit || permalinkOf(content, found.unit) !== previousPost.url) return;
     const state = tracker.tracked.get(found.unit);
     if (state) paint(found.unit, state); // syncAnchors が新しい箱を拾う
-    updateHoveredAtPointer(true);
+    if (permalinkOf(content, found.unit) !== previousPost.url) return;
+    updateHoveredAtPointer(true, found.unit);
   }
 
   function repaintAnchor(anchor: Anchor) {
@@ -419,6 +617,7 @@ export async function startOverlay(): Promise<() => void> {
     const mediaKeys = individual && element ? mediaKeysOf(element, content.platform) : undefined;
     const saveId = newSaveId();
     const message: SavePostMessage = previous ? { ...previous, saveId } : { ...(individual ? { mediaKeys: mediaKeys ?? [] } : {}), type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) };
+    if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) testSaveStarts += 1;
     const target = [message.domMeta?.displayName || message.domMeta?.screenName, message.domMeta?.text?.slice(0, 60)].filter(Boolean).join(' · ') || postUrl;
     toasts.clearFailure(postUrl + JSON.stringify(message.mediaKeys ?? []));
     const failed = (text: string, queued = false, savedNothing = false) => {
@@ -463,7 +662,7 @@ export async function startOverlay(): Promise<() => void> {
     });
     // 呼び出しの場でインラインに書くのではなく名前を付ける。それに
     // よって呼び出し自体が、下の try/catch の中でただ1つの文になる。
-    const onAnswer = (res?: SaveResponse) => {
+    const onAnswer = guardCaughtException(logSaveEvent, 'content', 'overlay-save-answer', (res?: SaveResponse) => {
       if (!deadline.settle()) return; // すでに諦めた押下への遅れた答え
       if (chrome.runtime.lastError || !res || !res.ok) {
         failed(saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined), !!(res && !res.ok && res.queued), !!(res && !res.ok && res.savedNothing));
@@ -505,7 +704,7 @@ export async function startOverlay(): Promise<() => void> {
       // このコールバックだけが、本人が押した保存の成功を指す。保存済み
       // の問い合わせや他経路からの更新で印が出るときまで動かさない。
       if (complete) celebrateSave(anchor.control);
-    };
+    });
     // 上の probe に加えて try/catch も（#594）: sendMessage はこちら
     // 側で無効化された context に対して例外を投げる唯一の呼び出しで、
     // その時点でデッドラインはすでに起動している＝無防備な throw は
@@ -527,11 +726,14 @@ export async function startOverlay(): Promise<() => void> {
     anchor.timer = null;
     anchor.phase = phase;
     if (!ms) return;
-    anchor.timer = setTimeout(() => {
-      anchor.timer = null;
-      anchor.phase = 'idle';
-      repaintAnchor(anchor);
-    }, ms);
+    anchor.timer = setTimeout(
+      guardCaughtException(logSaveEvent, 'content', 'overlay-phase-timer', () => {
+        anchor.timer = null;
+        anchor.phase = 'idle';
+        repaintAnchor(anchor);
+      }),
+      ms,
+    );
   }
 
   // === 描画 ===
@@ -553,8 +755,15 @@ export async function startOverlay(): Promise<() => void> {
   }
 
   function refreshUnitIdentity(unit: Element, state: UnitState) {
-    if (state.url === null) return;
     const currentUrl = permalinkOf(content, unit);
+    // 箱を交換せず投稿だけ再利用した場合も、古いホバーを引き継がない。
+    // この paint が同ユニットの面を更新するため、再帰的な再描画は不要。
+    if (hoveredPost?.unit === unit && currentUrl !== hoveredPost.url) {
+      hovered = null;
+      hoveredPost = null;
+      layoutMayAdoptHovered = false;
+    }
+    if (state.url === null) return;
     if (!currentUrl || currentUrl === state.url) return;
     state.url = currentUrl;
     state.saved = null;
@@ -581,11 +790,11 @@ export async function startOverlay(): Promise<() => void> {
       // 0x0のアバターがディスクを投稿の外に置いてしまう。
       const placedOn = anchor.kind === 'text' ? (site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null) : rect;
       const tooSmall = !placedOn || placedOn.width < CONTROL_SIZE || placedOn.height < CONTROL_SIZE || (anchor.kind === 'media' && (rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2));
-      const face = tooSmall ? null : faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
-      if (!face) {
+      if (tooSmall) {
         removeControl(anchor);
         continue;
       }
+      const face = faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
       // host 要素は面の変化より長生きする: それ自身の見た目を一切持
       // たず箱だけなので、これを保持することで、面が変わるたびに隅が
       // ページの DOM を出入りしなくて済む（ちらつきの記録に残るもの
@@ -606,21 +815,21 @@ export async function startOverlay(): Promise<() => void> {
       if (!el) continue;
       const multiple = site.mediaIn(unit).length > 1 || (content.platform === 'x' && unit.getAttribute('data-testid') === 'swipe-to-dismiss');
       const accessibleName = multiple ? t(anchor.kind === 'text' ? 'cornerSaveAll' : 'cornerSaveImage') : t('cornerSave');
-      if (born || anchor.face !== face || anchor.accessibleName !== accessibleName) {
+      if (face && (born || anchor.face !== face || anchor.accessibleName !== accessibleName)) {
         drawFace(anchor, face, t, {
-          onOpen: () => {
+          onOpen: guardCaughtException(logSaveEvent, 'content', 'overlay-open', () => {
             if (!state.url) return;
             const item = anchor.kind === 'media' ? positioning.postMediaIn(anchor.box) : null;
             const key = item && media ? mediaKeysOf(item, media.platform).find((value) => state.saved?.individualKeys?.has(value) && state.saved?.urlsByKey?.has(value)) : undefined;
             const mediaUrl = key ? state.saved?.urlsByKey?.get(key) : undefined;
             window.open(makePostLink({ url: state.url, mediaUrl }), '_self');
-          },
+          }),
           names: { save: accessibleName },
-          onSave: () => startSave(unit, state, anchor),
-          onRetry: () => {
+          onSave: guardCaughtException(logSaveEvent, 'content', 'overlay-save', () => startSave(unit, state, anchor)),
+          onRetry: guardCaughtException(logSaveEvent, 'content', 'overlay-retry', () => {
             setPhase(anchor, 'idle', 0);
             startSave(unit, state, anchor);
-          },
+          }),
         });
         anchor.face = face;
         anchor.accessibleName = accessibleName;
@@ -628,22 +837,28 @@ export async function startOverlay(): Promise<() => void> {
         // た名前を読めない（隅はブラウザのロケールに従う）＝重複警告
         // のボタンに対して data-hologram-choice が果たすのと同じ役割
         // だ。
-        el.setAttribute('data-hologram-face', face);
+      } else if (!face && (born || anchor.face !== null)) {
+        drawEmptyFace(anchor);
+        anchor.face = null;
+        anchor.accessibleName = null;
       }
       positioning.positionControl(anchor, el, site);
       // ホバー保存の操作は、スクロール中に新しくポインタの下に入って
       // きた画像に対して日常的に作られる。普通のスクロールが繰り返し
       // ポップのアニメーションにならないよう、静止させておく。
-      if (born && face !== 'save' && anchor.phase !== 'flash' && !prefersReducedMotion())
+      if (born && face && face !== 'save' && anchor.phase !== 'flash' && !prefersReducedMotion())
         anchor.control?.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
-            { opacity: 1, transform: 'scale(1.08)', offset: 0.6 },
+            // closed tree の拡大も host.scrollWidth/scrollHeight へ現れる。
+            // 保存履歴で変わる自動演出は、ホストの箱を越えない。
+            { opacity: 1, transform: 'scale(1)', offset: 0.6 },
             { opacity: 1, transform: 'scale(1)' },
           ],
           { duration: motion.durationBase, easing: motion.easeOut },
         );
     }
+    scheduleDelegatedHover();
   }
 
   function reposition() {
@@ -652,6 +867,7 @@ export async function startOverlay(): Promise<() => void> {
     const full = repositionFull;
     repositionFull = false;
     updateHoveredAtPointer(!inScrollBurst && layoutMayAdoptHovered);
+    scheduleDelegatedHover();
     if (!full) return;
     let detached = false;
     for (const unit of tracker.visible) {
@@ -671,7 +887,7 @@ export async function startOverlay(): Promise<() => void> {
     if (full) repositionFull = true;
     if (repositionQueued) return;
     repositionQueued = true;
-    repositionFrame = requestAnimationFrame(reposition);
+    repositionFrame = requestAnimationFrame(guardCaughtException(logSaveEvent, 'content', 'overlay-reposition-frame', reposition));
   }
 
   // ひと固まりを終わらせる＝レイアウトが再びホバーを別の画像へ渡して
@@ -694,12 +910,13 @@ export async function startOverlay(): Promise<() => void> {
     // ここで再評価しないと、スクロールで前の画像から外れた後は、ポインタを
     // 動かすまで保存ボタンが戻らない。
     updateHoveredAtPointer(true);
+    scheduleDelegatedHover();
   }
 
   function scheduleScrollEndFallback() {
     if (supportsScrollEnd) return;
     if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
-    scrollHoverTimer = setTimeout(finishHoverAfterScroll, SCROLL_HOVER_SETTLE_MS);
+    scrollHoverTimer = setTimeout(guardCaughtException(logSaveEvent, 'content', 'overlay-scroll-settle', finishHoverAfterScroll), SCROLL_HOVER_SETTLE_MS);
   }
 
   // 操作はメディアの子要素なので、JavaScript なしでそれと一緒にスク
@@ -708,7 +925,7 @@ export async function startOverlay(): Promise<() => void> {
   // タの下から画像をスクロールで出すとここで操作をクリアする。1枚の
   // 中でのスクロール（長い投稿を読むホイールの揺れ）はそのままにす
   // る。
-  const onScroll = (event: Event) => {
+  const onScroll = guardCaughtException(logSaveEvent, 'content', 'overlay-scroll', (event: Event) => {
     inScrollBurst = true;
     activeScrollTargets.add(event.target ?? window);
     layoutMayAdoptHovered = false;
@@ -716,14 +933,15 @@ export async function startOverlay(): Promise<() => void> {
     repositionFrame = null;
     repositionQueued = false;
     if (hovered && !positioning.pointerStillOn(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
+    scheduleDelegatedHover();
     scheduleScrollEndFallback();
-  };
-  const onScrollEnd = (event: Event) => {
+  });
+  const onScrollEnd = guardCaughtException(logSaveEvent, 'content', 'overlay-scrollend', (event: Event) => {
     activeScrollTargets.delete(event.target ?? window);
     if (activeScrollTargets.size === 0) finishHoverAfterScroll();
-  };
-  const onResize = () => scheduleReposition(true);
-  const onPageRestore = (event: Event) => {
+  });
+  const onResize = guardCaughtException(logSaveEvent, 'content', 'overlay-resize', () => scheduleReposition(true));
+  const onPageRestore = guardCaughtException(logSaveEvent, 'content', 'overlay-page-restore', (event: Event) => {
     if (event.type === 'visibilitychange' && document.hidden) return;
     // 履歴復帰で scrollend を受け取れなかった状態を引き継がない。
     finishHoverAfterScroll();
@@ -731,7 +949,7 @@ export async function startOverlay(): Promise<() => void> {
     tracker.forgetDetached();
     tracker.scan();
     scheduleReposition(true);
-  };
+  });
   addEventListener('pageshow', onPageRestore);
   addEventListener('popstate', onPageRestore);
   document.addEventListener('visibilitychange', onPageRestore);
@@ -745,7 +963,7 @@ export async function startOverlay(): Promise<() => void> {
   // 済み）ので、操作は次のスクロールまで待たされてしまう。画像自身の
   // load イベントこそが、箱がサイズを得るまさにその瞬間だ＝load はバ
   // ブルしないので、キャプチャ相で `document` に付ける。
-  const onMediaLoad = () => scheduleReposition(true);
+  const onMediaLoad = guardCaughtException(logSaveEvent, 'content', 'overlay-media-load', () => scheduleReposition(true));
   document.addEventListener('load', onMediaLoad, { capture: true, passive: true });
 
   // === このタブの下で拡張機能が消えた（#594） ===
@@ -769,6 +987,13 @@ export async function startOverlay(): Promise<() => void> {
     disposed = true;
     document.removeEventListener('pointermove', onPointerMove, true);
     document.removeEventListener('pointerout', onPointerOut, true);
+    for (const type of delegatedEventTypes) document.removeEventListener(type, onDelegatedPointerEvent, true);
+    removeEventListener('blur', onInputInterrupted);
+    document.removeEventListener('visibilitychange', onInputInterrupted);
+    if (delegatedHoverFrame !== null) cancelAnimationFrame(delegatedHoverFrame);
+    delegatedHoverFrame = null;
+    resetPresses();
+    delegatedHover = null;
     document.removeEventListener('load', onMediaLoad, { capture: true });
     removeEventListener('scroll', onScroll, { capture: true });
     removeEventListener('scrollend', onScrollEnd, { capture: true });
@@ -783,6 +1008,7 @@ export async function startOverlay(): Promise<() => void> {
     repositionFrame = null;
     repositionQueued = false;
     hovered = null;
+    hoveredPost = null;
     for (const [, state] of tracker.tracked) {
       for (const [, anchor] of state.anchors) {
         // removeControl の中ではなくここでクリアする: 他の場所では、
@@ -797,6 +1023,7 @@ export async function startOverlay(): Promise<() => void> {
     }
     tracker.dispose();
     savedQuery.dispose();
+    if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) chrome.runtime.onMessage.removeListener(onTestMessage);
     overlayActive = false;
   };
   const stopWatchingContext = onExtensionGone(cleanup);

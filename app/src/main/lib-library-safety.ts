@@ -1,4 +1,5 @@
 import { appActivity } from './app-activity.ts';
+import { runLibraryBackgroundTask } from './lib-library-background-activity.ts';
 ('use strict');
 
 // 同じ PC 内での復旧と、手動エクスポートの通知を扱う。
@@ -14,7 +15,7 @@ import { configDir } from './native-host.ts';
 import { getSaveFolder, readLibraryExportReminderConfig, writeLibraryExportReminderConfig, readLibraryIntegrityStatus, writeLibraryIntegrityStatus } from './lib-config.ts';
 import { createGeneration, latestGeneration, listGenerations, pruneGenerations } from './lib-db-generations.ts';
 import { checkOrphans, recoverOrphanRecords } from './lib-db-integrity.ts';
-import type { DbHandle } from './ipc-context.ts';
+import type { CompleteExportWatermark, DbHandle } from './ipc-context.ts';
 
 export interface LibrarySafetyDeps {
   ensurePostsSynced(): DbHandle | null;
@@ -57,6 +58,26 @@ function validateSaveFolder(dir) {
 }
 
 function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send }: LibrarySafetyDeps) {
+  // 完全エクスポートは複数ウィンドウから同時に始められる。開始時の保存世代を
+  // watermark にし、完了済み世代を単調増加させることで、同じ baseline を二度
+  // 差し引かない。ライブラリ切替を挟んだ古い完了も epoch で無効になる。
+  let observedLibrary: string | null = null;
+  let libraryEpoch = 0;
+  let saveGeneration = 0;
+  let exportedGeneration = 0;
+  const syncLibraryEpoch = () => {
+    const current = path.resolve(getSaveFolder());
+    if (observedLibrary === null) {
+      observedLibrary = current;
+      saveGeneration = readLibraryExportReminderConfig().changesSinceExport;
+    } else if (current !== observedLibrary) {
+      observedLibrary = current;
+      libraryEpoch++;
+      saveGeneration = readLibraryExportReminderConfig().changesSinceExport;
+      exportedGeneration = 0;
+    }
+    return current;
+  };
   const publishExportReminder = () => {
     const state = exportReminderState();
     send('export-reminder-changed', state);
@@ -71,8 +92,14 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send 
     writeLibraryExportReminderConfig({ threshold });
     return publishExportReminder();
   };
-  const markExported = () => {
-    writeLibraryExportReminderConfig({ changesSinceExport: 0, lastExportAt: new Date().toISOString() });
+  const beginCompleteExport = (): CompleteExportWatermark => ({ library: syncLibraryEpoch(), epoch: libraryEpoch, generation: saveGeneration });
+  const markExported = (watermark: CompleteExportWatermark) => {
+    const currentLibrary = syncLibraryEpoch();
+    if (watermark.library !== currentLibrary || watermark.epoch !== libraryEpoch) return exportReminderState();
+    const covered = Math.max(0, watermark.generation - exportedGeneration);
+    const current = readLibraryExportReminderConfig();
+    writeLibraryExportReminderConfig({ changesSinceExport: Math.max(0, current.changesSinceExport - covered), lastExportAt: new Date().toISOString() });
+    exportedGeneration = Math.max(exportedGeneration, watermark.generation);
     return publishExportReminder();
   };
 
@@ -92,7 +119,10 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send 
     return status;
   }
 
-  async function runStartupIntegrityCheck() {
+  function runStartupIntegrityCheck() {
+    return runLibraryBackgroundTask(runStartupIntegrityCheckNow);
+  }
+  async function runStartupIntegrityCheckNow() {
     const folder = getSaveFolder();
     if (!folder || !fs.existsSync(folder)) return;
     try {
@@ -125,7 +155,10 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send 
     return Date.now() - Date.parse(list[0].at) >= GENERATION_INTERVAL_MS;
   }
 
-  async function runDbGeneration(reason: string, force = false) {
+  function runDbGeneration(reason: string, force = false) {
+    return runLibraryBackgroundTask(() => runDbGenerationNow(reason, force));
+  }
+  async function runDbGenerationNow(reason: string, force = false) {
     const folder = getSaveFolder();
     if (!folder) return { ok: false, error: 'not-configured' };
     if (!fs.existsSync(folder)) return { ok: false, error: 'src-missing' };
@@ -161,6 +194,8 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send 
   function notePostsSaved(count = 1) {
     const delta = Math.floor(Number(count));
     if (!Number.isFinite(delta) || delta <= 0) return exportReminderState();
+    syncLibraryEpoch();
+    saveGeneration += delta;
     const current = readLibraryExportReminderConfig();
     writeLibraryExportReminderConfig({ changesSinceExport: current.changesSinceExport + delta });
     return publishExportReminder();
@@ -175,6 +210,7 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send 
     getExportReminder,
     setExportReminderEnabled,
     setExportReminderThreshold,
+    beginCompleteExport,
     markExported,
     runDbGeneration,
     armRecoverySchedule,

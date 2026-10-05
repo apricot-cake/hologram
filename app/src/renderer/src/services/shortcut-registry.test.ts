@@ -174,6 +174,45 @@ describe('衝突検出（findConflict）', () => {
 });
 
 describe('再割り当て（setCustomCombo）', () => {
+  test.each([
+    ['Ctrl+f', 'Ctrl+Shift+f'],
+    ['Ctrl+Shift+f', 'Ctrl+Shift+f'],
+    ['Ctrl+f', 'Ctrl+f'],
+    ['Ctrl+Shift+f', 'Ctrl+f'],
+    ['Alt+f', 'Shift+Alt+f'],
+    ['Ctrl+Alt+f', 'Ctrl+Shift+Alt+f'],
+    ['f', 'Shift+f'],
+  ])('Shift を無視する操作への %s の割り当ては既存の %s と衝突する', (input, occupied) => {
+    registerShortcut(makeEntry({ id: 'selection.selectAll', defaultCombo: 'Ctrl+a', ignoreShift: true }));
+    registerShortcut(makeEntry({ id: 'fulltext.open', defaultCombo: occupied }));
+    const changed = vi.fn();
+    const unsubscribe = subscribe(changed);
+    expect(setCustomCombo('selection.selectAll', input)).toEqual({ ok: false, conflict: { id: 'fulltext.open', title: 'shortcutUndo' } });
+    expect(currentCombo('selection.selectAll')).toBe('Ctrl+a');
+    expect(store.shortcutOverrides).toBeUndefined();
+    expect(changed).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  test('Shift を無視する操作は自分自身を除外し、受理した組み合わせを Shift 有無で実行する', () => {
+    const perform = vi.fn();
+    registerShortcut(makeEntry({ id: 'selection.selectAll', defaultCombo: 'Ctrl+a', ignoreShift: true, perform }));
+    expect(setCustomCombo('selection.selectAll', 'Ctrl+Shift+a')).toEqual({ ok: true });
+    expect(setCustomCombo('selection.selectAll', 'Ctrl+Shift+q')).toEqual({ ok: true });
+    expect(store.shortcutOverrides).toEqual({ 'selection.selectAll': 'Ctrl+q' });
+    expect(tryRun('selection.selectAll', key({ key: 'q', ctrlKey: true }))).toBe(true);
+    expect(tryRun('selection.selectAll', key({ key: 'Q', ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(perform).toHaveBeenCalledTimes(2);
+  });
+
+  test('Shift を区別する操作は同じキーの Shift 有無を別々に割り当てられる', () => {
+    registerShortcut(makeEntry({ id: 'undo', defaultCombo: 'Ctrl+z' }));
+    registerShortcut(makeEntry({ id: 'redo', defaultCombo: 'Ctrl+Shift+z' }));
+    expect(setCustomCombo('undo', 'Ctrl+y')).toEqual({ ok: true });
+    expect(setCustomCombo('redo', 'Ctrl+Shift+y')).toEqual({ ok: true });
+    expect(store.shortcutOverrides).toEqual({ undo: 'Ctrl+y', redo: 'Ctrl+Shift+y' });
+  });
+
   test('空いているコンボへの割り当ては成功し、list() と currentCombo に反映される', () => {
     registerShortcut(makeEntry({ id: 'undo', defaultCombo: 'Ctrl+z' }));
     const result = setCustomCombo('undo', 'Ctrl+y');

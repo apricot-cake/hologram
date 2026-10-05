@@ -117,6 +117,13 @@ function stripShift(combo: string): string {
   return combo.replace('Shift+', '');
 }
 
+function addShift(combo: string): string {
+  const parts = combo.split('+');
+  const ctrlIndex = parts.indexOf('Ctrl');
+  parts.splice(ctrlIndex + 1, 0, 'Shift');
+  return parts.join('+');
+}
+
 export function comboFromEvent(e: KeyboardEvent): string {
   const parts: string[] = [];
   if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
@@ -180,7 +187,7 @@ export function setCustomCombo(id: string, combo: string): SetComboResult {
   const entry = entries.get(id);
   if (!entry) return { ok: false, conflict: { id: '', title: '' } };
   const stored = entry.ignoreShift ? stripShift(combo) : combo;
-  const conflict = findConflict(stored, id);
+  const conflict = findConflict(stored, id) ?? (entry.ignoreShift ? findConflict(addShift(stored), id) : null);
   if (conflict) return { ok: false, conflict };
   overrides = { ...overrides, [id]: stored };
   persist();

@@ -1,7 +1,7 @@
 // ブリッジの送信が native host に一度も届かなかった保存のための再試行
 // キュー（#203）。bridgeSend が一度も答えを読まないまま reject したと
-// き（connectNative が例外を投げた、ポートが応答なしに切断された、送
-// 信がタイムアウトした）、通信路に乗るはずだった個別画像の保存要求を
+// き、または要求を送った後に結果だけ分からなくなったとき、通信路に乗る
+// はずだった個別画像の保存要求を
 // ここへ退避し、host に再び届くようになった
 // ら再送する。失われはしない。これがなければ、失敗バナーが提示できる
 // 唯一の直し方（host を登録する、Chrome を再起動する）が、ユーザーが
@@ -20,8 +20,9 @@
 //     との一致では絶対にない。native-error.ts の文字列分類は意図して
 //     狭くしてあり、Chrome の文言変更に対して壊れやすい。再試行の対象
 //     とするかどうかがその壊れやすさを引き継いではいけない。
-//     background.ts の bridgeSend は該当するエラーに `.unreachable` の
-//     印を付け、このモジュールが信頼するのはそれだけだ。
+//     background.ts の bridgeSend は機構から `delivery` を付け、このモ
+//     ジュールが信頼するのはそれだけだ。送信前、結果不明、明示拒否を
+//     Error の文言から推測してはならない。
 //   - chrome.storage.local のキーはエントリごとに1つで、全部をまとめ
 //     て持つ1本の配列キーには絶対にしない: 2件の保存が同時に失敗した
 //     とき、同じ配列への read-modify-write が競合して片方を黙って落と
@@ -33,7 +34,7 @@
 //     （約10MiB）は診断用のリング
 //     バッファ（background.ts の DIAG_PREFIX）と共有している。件数の
 //     上限だけでは、許可したエントリが実際に収まる保証にはならない。
-import type { SavedEntry, SaveMediaRequest } from '../../native-host/protocol.mts';
+import type { RequestReceipt, SavedEntry, SaveMediaRequest } from '../../native-host/protocol.mts';
 import type { SaveLogEntry } from './capture-log.ts';
 import { getNativeHost } from './native-host.ts';
 
@@ -55,6 +56,17 @@ export const SAVE_QUEUE_MAX_TRIES = 5;
 
 type QueueableRequest = SaveMediaRequest;
 
+const initialSaves = new Set<string>();
+const initialSaveKey = (request: Pick<QueueableRequest, 'captureId' | 'requestNonce'>, host: string) => JSON.stringify([host, request.captureId, request.requestNonce ?? null]);
+
+// 同じworkerでの初回送信とsweepを重ねない。worker終了後はこの集合も
+// 消えるため、未送信の耐久キューは新しいworkerで通常どおり回収できる。
+export function beginQueuedSave(request: QueueableRequest, host: string): () => void {
+  const key = initialSaveKey(request, host);
+  initialSaves.add(key);
+  return () => initialSaves.delete(key);
+}
+
 export interface QueuedSaveEntry {
   v: 1;
   ts: string; // ISO — 保管庫のキーにも埋め込んであり、追い出しはキーだけでソートできる
@@ -66,6 +78,11 @@ export interface QueuedSaveEntry {
   type: QueueableRequest['type'];
   payload: QueueableRequest;
   tries: number;
+  // true は要求を送った後に応答だけを失ったことを表す。この状態では、
+  // ライブラリへの問い合わせが成功して「未保存」と確定するまで再送しない。
+  // タイムアウト直後には host の commit がまだ進行中かもしれないためである。
+  outcomeUnknown?: boolean;
+  attemptedAt?: number;
   // tries が SAVE_QUEUE_MAX_TRIES に達したときにセットする＝このキー
   // が置かれているモジュールコメントを参照。諦めたエントリは（削除さ
   // れず）その場に残るので、診断ページはそれでもそれを数えられる。他
@@ -119,6 +136,17 @@ interface QueueRow {
   size: number;
 }
 
+let queueMutation: Promise<void> = Promise.resolve();
+
+function serializeQueueMutation<T>(work: () => Promise<T>): Promise<T> {
+  const result = queueMutation.then(work, work);
+  queueMutation = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 // 今保管庫にあるキューのエントリすべてを、古いものから順に。文字列と
 // してのキー順が時系列順になっている＝診断用リングバッファのキーが使
 // うのと同じ仕掛けで、「一番古いものを落とす」のために `ts` を別途ソー
@@ -132,16 +160,16 @@ function queueRowsOf(all: Record<string, unknown>): QueueRow[] {
 
 // --- 退避 -----------------------------------------------------------------------
 
-// background.ts のブリッジの catch から呼ばれる。送信に `.unreachable`
-// の印が付いた保存ごとに1回。エントリが今保管庫にあって後で再送できる
+// background.ts のブリッジの catch から呼ばれる。未送信または結果不明の
+// 保存ごとに1回。エントリが今保管庫にあって後で確認・再送できる
 // なら true、何も保持できなかったら false を返す＝この2つの答えから
 // 失敗バナーの文言（i18n.ts の bannerQueued / bannerNotQueued）が選ば
 // れるので、呼び出し元は絶対にどちらかを推測してはいけない。
-export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger, targetHost?: string): Promise<boolean> {
+export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger, targetHost?: string, outcomeUnknown = false, preserveExisting = false): Promise<boolean> {
   const nativeHost = targetHost ?? (await getNativeHost());
   const ts = new Date().toISOString();
   const candidatePayload = payload;
-  const size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 });
+  const size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0, outcomeUnknown });
 
   if (size > SAVE_QUEUE_BUDGET_BYTES) {
     // 単独でこのエントリが予算に収まらない。保持しても、収まるはずのエントリを
@@ -151,57 +179,111 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
     return false;
   }
 
-  const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 };
+  const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0, ...(outcomeUnknown ? { outcomeUnknown: true, attemptedAt: Date.now() } : {}) };
 
-  try {
-    const rows = queueRowsOf(await storageGet(null));
-    let totalBytes = rows.reduce((sum, row) => sum + row.size, 0) + size;
-    let count = rows.length + 1;
-    const evicted: string[] = [];
-    let i = 0;
-    // 新しいエントリが両方の上限に収まるまで、古い方から追い出す。必
-    // ず終わる: この候補は単独では上の予算チェックをすでに通っている
-    // ので、既存の行をすべて追い出せば（i が rows.length に達する）
-    // ちょうど1件だけが残り、それはバイト数・件数どちらの天井の下にも
-    // 収まる。
-    while ((totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES) && i < rows.length) {
-      const oldest = rows[i];
-      i++;
-      if (!oldest) continue; // 到達しない（i < rows.length が今成立していた）＝noUncheckedIndexedAccess を満たすため
-      totalBytes -= oldest.size;
-      count -= 1;
-      evicted.push(oldest.key);
+  return serializeQueueMutation(async () => {
+    try {
+      const rows = queueRowsOf(await storageGet(null));
+      let totalBytes = rows.reduce((sum, row) => sum + row.size, 0) + size;
+      let count = rows.length + 1;
+      const evicted: string[] = [];
+      let i = 0;
+      if (preserveExisting && (totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES)) {
+        // gaveUpは再送対象でない終端在庫。unknown/retryableを守ったまま、
+        // 新しい保存を永久に拒否しない範囲で古いgaveUpだけを整理する。
+        for (const row of rows.filter((row) => row.entry.gaveUp)) {
+          if (totalBytes <= SAVE_QUEUE_BUDGET_BYTES && count <= SAVE_QUEUE_MAX_ENTRIES) break;
+          totalBytes -= row.size;
+          count -= 1;
+          evicted.push(row.key);
+        }
+        if (totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES) {
+          log({ stage: 'queue', phase: 'fail', reason: 'quota', type: payload.type }, true);
+          return false;
+        }
+      }
+      // 新しいエントリが両方の上限に収まるまで、古い方から追い出す。必
+      // ず終わる: この候補は単独では上の予算チェックをすでに通っている
+      // ので、既存の行をすべて追い出せば（i が rows.length に達する）
+      // ちょうど1件だけが残り、それはバイト数・件数どちらの天井の下にも
+      // 収まる。
+      while ((totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES) && i < rows.length) {
+        const oldest = rows[i];
+        i++;
+        if (!oldest) continue; // 到達しない（i < rows.length が今成立していた）＝noUncheckedIndexedAccess を満たすため
+        totalBytes -= oldest.size;
+        count -= 1;
+        evicted.push(oldest.key);
+      }
+      if (evicted.length) {
+        await storageRemove(evicted);
+        log({ stage: 'queue', phase: 'evict', count: evicted.length }, true);
+      }
+      const key = `${SAVE_QUEUE_PREFIX}${ts}_${Math.floor(Math.random() * 1e6)}`;
+      await storageSet({ [key]: entry });
+      return true;
+    } catch (err) {
+      // この関数自身の予算計算が「収まるはず」と言った後でも、書き込み
+      // は失敗しうる（特に、診断用リングバッファ自身の書き込みとの
+      // QUOTA_BYTES の競合）。再試行はせず捨てる＝モジュールコメントの
+      // 「予算はバイト数」という理由付けを参照: 今すぐもう一度試みても、
+      // 同じ保管庫と再び競合するだけだ。
+      log({ stage: 'queue', phase: 'fail', reason: 'quota', type: payload.type, error: (err as Error)?.message }, true);
+      return false;
     }
-    if (evicted.length) {
-      await storageRemove(evicted);
-      log({ stage: 'queue', phase: 'evict', count: evicted.length }, true);
-    }
-    const key = `${SAVE_QUEUE_PREFIX}${ts}_${Math.floor(Math.random() * 1e6)}`;
-    await storageSet({ [key]: entry });
-    return true;
-  } catch (err) {
-    // この関数自身の予算計算が「収まるはず」と言った後でも、書き込み
-    // は失敗しうる（特に、診断用リングバッファ自身の書き込みとの
-    // QUOTA_BYTES の競合）。再試行はせず捨てる＝モジュールコメントの
-    // 「予算はバイト数」という理由付けを参照: 今すぐもう一度試みても、
-    // 同じ保管庫と再び競合するだけだ。
-    log({ stage: 'queue', phase: 'fail', reason: 'quota', type: payload.type, error: (err as Error)?.message }, true);
-    return false;
+  });
+}
+
+// 送信前に耐久化した要求を、ack または明示拒否を受け取った後だけ除く。
+export async function removeQueuedSave(request: Pick<QueueableRequest, 'captureId' | 'requestNonce'>, targetHost?: string): Promise<void> {
+  const nativeHost = targetHost ?? (await getNativeHost());
+  const rows = queueRowsOf(await storageGet(null));
+  await storageRemove(rows.filter((row) => row.entry.host === nativeHost && row.entry.payload.captureId === request.captureId && (row.entry.payload.requestNonce ?? null) === (request.requestNonce ?? null)).map((row) => row.key));
+}
+
+export async function markQueuedSaveUnknown(request: Pick<QueueableRequest, 'captureId' | 'requestNonce'>, targetHost?: string): Promise<void> {
+  const nativeHost = targetHost ?? (await getNativeHost());
+  const rows = queueRowsOf(await storageGet(null));
+  for (const row of rows) {
+    if (row.entry.host === nativeHost && row.entry.payload.captureId === request.captureId && (row.entry.payload.requestNonce ?? null) === (request.requestNonce ?? null)) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: true, attemptedAt: Date.now() } });
   }
+}
+
+export async function markQueuedSaveNotSent(request: Pick<QueueableRequest, 'captureId' | 'requestNonce'>, targetHost?: string): Promise<void> {
+  const nativeHost = targetHost ?? (await getNativeHost());
+  const rows = queueRowsOf(await storageGet(null));
+  for (const row of rows) {
+    if (row.entry.host === nativeHost && row.entry.payload.captureId === request.captureId && (row.entry.payload.requestNonce ?? null) === (request.requestNonce ?? null)) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: false, attemptedAt: undefined } });
+  }
+}
+
+// 保存先と結果不明状態を、最初の送信より先に同じ行へ記録する。
+export async function bindQueuedSave(request: QueueableRequest, saveFolder: string, targetHost: string): Promise<QueueableRequest> {
+  return serializeQueueMutation(async () => {
+    const rows = queueRowsOf(await storageGet(null));
+    const row = rows.find((row) => row.entry.host === targetHost && row.entry.payload.captureId === request.captureId && (row.entry.payload.requestNonce ?? null) === (request.requestNonce ?? null));
+    if (!row || (row.entry.payload.expectedSaveFolder && row.entry.payload.expectedSaveFolder !== saveFolder)) throw new Error('Queued save library cannot be changed');
+    const payload = { ...row.entry.payload, expectedSaveFolder: saveFolder };
+    const bound = { ...row.entry, payload, outcomeUnknown: true, attemptedAt: Date.now() };
+    const bytes = new TextEncoder().encode(JSON.stringify(bound)).byteLength;
+    if (rows.reduce((sum, other) => sum + (other.key === row.key ? bytes : other.size), 0) > SAVE_QUEUE_BUDGET_BYTES) throw new Error('Save queue is full');
+    await storageSet({ [row.key]: bound });
+    return payload;
+  });
 }
 
 // --- sweep（再送） ----------------------------------------------------------------
 
 export interface SweepDeps {
   // background.ts の bridgeSend。通常の保存の送信と同じやり方で
-  // reject する。`.unreachable` の印が付いたエラーも含めて＝このモ
-  // ジュールはその分類を再実装しない。
-  send: (payload: QueueableRequest) => Promise<unknown>;
+  // reject する。`delivery` の分類も含めて＝このモジュールはその分類を
+  // 再実装しない。
+  send: (payload: QueueableRequest, host: string) => Promise<unknown>;
   // バッジのキャッシュではなく、新しく行う「このパーマリンクは保存済
   // みか」の問い合わせ（background.ts の queryBridge）＝どんな失敗で
   // も reject ではなく null で解決する（fail-open、
   // duplicate-guard.ts の checkDuplicate と同じルール）。
-  query: (url: string) => Promise<SavedEntry | null>;
+  query: (url: string, requestId: string, host: string) => Promise<{ saved: SavedEntry | null; receipt: RequestReceipt | null; receiptCapable: boolean; saveFolder?: string }>;
   log: SaveQueueLogger;
 }
 
@@ -227,16 +309,30 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
   try {
     const nativeHost = targetHost ?? (await getNativeHost());
     const rows = queueRowsOf(await storageGet(null)).filter((row) => row.entry?.host === nativeHost && !row.entry?.gaveUp);
-    for (const { key, entry } of rows) {
+    for (const row of rows) {
+      const key = row.key;
+      let entry = row.entry;
+      if (initialSaves.has(initialSaveKey(entry.payload, nativeHost))) continue;
       const url = entry.payload?.metadata?.url ?? null;
       const captureId = entry.payload?.captureId ?? null;
-      if (url) {
+      {
         let known: SavedEntry | null = null;
+        let receipt: RequestReceipt | null = null;
+        let receiptCapable = false;
+        let queryConfirmed = false;
+        let saveFolder: string | undefined;
         try {
-          known = await deps.query(url);
+          ({ saved: known, receipt, receiptCapable, saveFolder } = await deps.query(url || '', captureId || '', nativeHost));
+          queryConfirmed = true;
         } catch {
-          known = null; // fail-open — 通常どおり送信する、duplicate-guard.ts の checkDuplicate と同じルール
+          known = null;
         }
+        // URLが無い要求でも照会する。別ライブラリの結果は採用しない。
+        // 旧unknownには元の保存先を証明できないため、後から現在の保存先を付けない。
+        if (!queryConfirmed || !receiptCapable || !saveFolder) continue;
+        if (entry.payload.expectedSaveFolder && entry.payload.expectedSaveFolder !== saveFolder) continue;
+        if (!entry.payload.expectedSaveFolder && entry.outcomeUnknown) continue;
+        if (!entry.payload.expectedSaveFolder) entry = { ...entry, payload: { ...entry.payload, expectedSaveFolder: saveFolder } };
         // #34 の owners/id は 2026-07-29 の時点ですでに乗っていた＝こ
         // のモジュールが実装する設計コメントは、まさにその理由でこの
         // べき等性チェックを v1 に折り込んでいる。一致するということ
@@ -244,16 +340,52 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
         // たということ。同じ URL に対する異なる captureId は、別の正
         // 当な保存であり、それでも送信しなければならない。
         const alreadyLanded = !!known && (known.id === captureId || (known.owners || []).includes(captureId));
-        if (alreadyLanded) {
+        const receiptMatches = !receipt || !('requestNonce' in receipt) || (receipt.requestNonce ?? null) === (entry.payload.requestNonce ?? null);
+        // captureId が同じでも nonce が違う receipt は別の保存要求のもの。
+        // URL の既存保存や終端状態を、この要求の結果として採用しない。
+        if (receipt && !receiptMatches) continue;
+        if ((receipt?.state === 'completed' && receiptMatches) || alreadyLanded) {
           await storageRemove([key]).catch(() => {});
           continue;
         }
+        if (receipt?.state === 'failed') {
+          deps.log({ stage: 'queue', phase: 'fail', reason: 'answered', type: entry.type, error: receipt.error }, true);
+          await storageRemove([key]).catch(() => {});
+          continue;
+        }
+        if ((receipt?.state === 'processing' || receipt?.state === 'claiming') && receiptMatches) continue;
+        if (receipt?.state === 'retryable') {
+          // owner が終了したことを host が確認済み。同じ requestId の排他を
+          // 取り直せるため、この場合だけ結果不明要求を再送できる。
+        } else if (entry.outcomeUnknown) {
+          // v4以前は receipt lock を持たない。新しい query の欄を無視した
+          // null を「未保存」と誤読して二重実行してはならない。
+          if (!receiptCapable) continue;
+          const graceMs = 90_000;
+          if (!entry.attemptedAt || Date.now() - entry.attemptedAt < graceMs || !queryConfirmed) continue;
+        }
+        // 送信後の timeout/disconnect は失敗ではなく結果不明である。照会
+        // 自体にも失敗したなら、再送は同じ capture の二重保存を作り得る。
+      }
+      let payload: QueueableRequest;
+      try {
+        if (!entry.payload.expectedSaveFolder) continue;
+        payload = await bindQueuedSave(entry.payload, entry.payload.expectedSaveFolder, nativeHost);
+      } catch (error: any) {
+        deps.log({ stage: 'queue', phase: 'fail', reason: 'quota', type: entry.type, error: error?.message }, true);
+        continue;
       }
       try {
-        await deps.send(entry.payload);
+        // どの再送もpostMessageより先に結果不明を耐久化する。workerが
+        // send直後に終了してcatchへ来なくても次世代は安全側から始める。
+        await deps.send(payload, nativeHost);
         await storageRemove([key]).catch(() => {});
       } catch (err: any) {
-        if (!err?.unreachable) {
+        if (err?.delivery === 'deferred') {
+          await storageSet({ [key]: { ...entry, outcomeUnknown: false, attemptedAt: undefined } });
+          continue;
+        }
+        if (err?.delivery === 'rejected') {
           // host は答えたうえで拒否した（自身の post-unavailable な
           // ど）＝再試行してもその答えを繰り返すだけだ。このエントリ
           // 1件だけを落として続ける。これは下の break が存在する理由
@@ -262,12 +394,17 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           await storageRemove([key]).catch(() => {});
           continue;
         }
+        if (err?.delivery === 'unknown') {
+          await storageSet({ [key]: { ...entry, outcomeUnknown: true, attemptedAt: Date.now() } }).catch(() => {});
+          break;
+        }
         const tries = (entry.tries || 0) + 1;
+        const deliveryState = err?.delivery === 'not-sent' ? { outcomeUnknown: false, attemptedAt: undefined } : {};
         if (tries >= SAVE_QUEUE_MAX_TRIES) {
-          await storageSet({ [key]: { ...entry, tries, gaveUp: true } }).catch(() => {});
+          await storageSet({ [key]: { ...entry, ...deliveryState, tries, gaveUp: true } }).catch(() => {});
           deps.log({ stage: 'queue', phase: 'giveup', type: entry.type }, true);
         } else {
-          await storageSet({ [key]: { ...entry, tries } }).catch(() => {});
+          await storageSet({ [key]: { ...entry, ...deliveryState, tries } }).catch(() => {});
         }
         break; // まだ到達不能＝残りも今すぐ試せば同じように失敗する
       }

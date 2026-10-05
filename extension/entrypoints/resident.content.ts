@@ -1,9 +1,11 @@
-import { extensionOrigin, logSaveEvent } from '../utils/capture-log.ts';
+import { defineContentScript } from 'wxt/utils/define-content-script';
+import { logSaveEvent } from '../utils/capture-log.ts';
 import { getContentSite, RESIDENT_MATCHES } from '../utils/extractor/index.ts';
 import { startOverlay } from '../utils/overlay.ts';
-import { installUncaughtReporting } from '../utils/uncaught-report.ts';
+import { reportCaughtException } from '../utils/uncaught-report.ts';
 import { refreshUiRootStyles } from '../utils/ui-root.ts';
 import { startBulkDiscovery } from '../utils/bulk-discovery.ts';
+import { watchResidentReplacement } from '../utils/resident-replacement.ts';
 
 export default defineContentScript({
   // このスクリプトが常駐するサイトは、ここで繰り返さずサイト側のモジュール
@@ -11,11 +13,6 @@ export default defineContentScript({
   matches: RESIDENT_MATCHES,
   runAt: 'document_idle',
   main() {
-    // 意図して disposable な runtime の外に置いている＝reporting は世代交代
-    // を生き延びる必要があり、installUncaughtReporting はどのみち realm ご
-    // とに1回しか効かない（#727）。
-    installUncaughtReporting(window, logSaveEvent, { context: 'content', ownOrigin: extensionOrigin() });
-
     // 再注入（開発サーバーが拡張機能をリロードする、または background が前
     // の世代がまだ保持しているタブへ新しいコピーを注入する）が起きると、こ
     // のファイルは古い listener と DOM をまだ抱えているかもしれない realm
@@ -45,6 +42,7 @@ export default defineContentScript({
       },
     };
     scope[OWNER] = owner;
+    cleanups.push(watchResidentReplacement(document, chrome.runtime, owner.dispose));
 
     const reportHoverSave = (message: { type?: string }, _sender: unknown, respond: (value: { hoverSave: boolean; platform?: string }) => void) => {
       if (message?.type === 'getHoverSaveStatus') respond({ hoverSave: true, platform: getContentSite()?.platform });
@@ -61,6 +59,9 @@ export default defineContentScript({
         cleanups.push(overlayCleanup);
         void chrome.runtime.sendMessage({ type: 'hoverSaveReady' }).catch(() => {});
       }
-    })().catch(() => owner.dispose());
+    })().catch((error) => {
+      reportCaughtException(logSaveEvent, 'content', error, 'resident-start');
+      owner.dispose();
+    });
   },
 });

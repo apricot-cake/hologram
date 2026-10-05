@@ -9,9 +9,11 @@
 // 通して、保存先フォルダからファイル1つを読むもの。書庫の仕掛けの2つ目の複製ではない＝zip は
 // ディスクに留まり、この境界を越えるのは求められたフレームだけ。
 import { ipcMain } from './activity-ipc.ts';
-import fs from 'node:fs';
 import { applyCachedMetadata } from './lib-metadata-backfill.ts';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
+import { readBoundedImageDataUrl } from './lib-image-data-url.ts';
+import fs from 'node:fs/promises';
+import { prepareImageBytes } from './image-processing.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { RecordPostViewResult } from './ipc-payloads.ts';
 
@@ -81,12 +83,7 @@ function register(ctx: IpcContext) {
   ipcMain.handle('image-data-url', async (_e, image) => {
     const p = resolveInFolder(image);
     if (!p) return null;
-    try {
-      const buf = await fs.promises.readFile(p);
-      return 'data:' + mimeForFile(image) + ';base64,' + buf.toString('base64');
-    } catch {
-      return null;
-    }
+    return readBoundedImageDataUrl(p, mimeForFile(image));
   });
 
   // この入口から ZIP の読み手へ届くのは、保存先フォルダの中の .zip だけ。うごイラは、ライブラリ
@@ -104,15 +101,16 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // フレーム1枚分のバイト列、または null。レンダラーはそれを、自分が復号できる Blob で包む。
-  // 途中で base64 にするものは無い（その膨張こそ、昔の書庫を丸ごと data: の URL にするやり方を
-  // 高くしていたもの）。
+  // ZIP の各フレームも共通 worker で復号し、安全な PNG と実寸だけを渡す。
   ipcMain.handle('ugoira-frame', async (_e, file, name) => {
     const p = ugoiraPath(file);
     if (!p) return null;
     try {
       const frame = await readUgoiraFrame(p, name);
-      return frame ? new Uint8Array(frame) : null;
+      if (!frame) return null;
+      const image = await prepareImageBytes(frame, { kind: 'copy' });
+      if (!image || image.mime !== 'image/png') return null;
+      return { bytes: new Uint8Array(await fs.readFile(image.path)), width: image.width, height: image.height };
     } catch {
       return null;
     }

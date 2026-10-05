@@ -37,7 +37,7 @@ interface XPostLink {
 }
 
 function getXPostLink(post: Element): XPostLink | null {
-  const links = post instanceof Element ? Array.from(post.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]')) : [];
+  const links = post instanceof Element ? xOwnAll(post, 'a[href*="/status/"]').filter((el): el is HTMLAnchorElement => el instanceof HTMLAnchorElement) : [];
 
   // 時刻のアンカーを優先し、それが無ければ素の /user/status/<id> のアンカーを採る。
   // article の中で最初に出てくる /status/ のリンクは、/photo/N や /analytics のことがある。
@@ -251,6 +251,36 @@ function extractXDomMeta(post: Element): DomMeta {
   const views = xControlCount(xOwn(post, 'a[href*="/analytics"]'));
   if (views != null) meta.views = views;
 
+  const link = getXPostLink(post);
+  if (link && meta.screenName && (meta.text?.trim() || xOwn(post, '[data-testid="tweetPhoto"]'))) {
+    const media: MediaItem[] = [];
+    const indices = new Set<number>();
+    let mediaComplete = !xOwn(post, '[data-testid="videoPlayer"], video');
+    for (const anchor of xOwnAll(post, 'a[href*="/photo/"]')) {
+      const href = (anchor as HTMLAnchorElement).href;
+      const match = new URL(href, location.origin).pathname.match(/\/status\/(\d+)\/photo\/(\d+)$/);
+      if (!match || match[1] !== link.postId) continue;
+      const img = anchor.querySelector('img');
+      const src = img?.currentSrc || img?.src;
+      if (!src) {
+        mediaComplete = false;
+        continue;
+      }
+      const source = new URL(src, location.origin);
+      if (source.protocol !== 'https:' || source.hostname !== 'pbs.twimg.com' || !source.pathname.startsWith('/media/')) {
+        mediaComplete = false;
+        continue;
+      }
+      indices.add(Number(match[2]));
+      source.searchParams.set('name', 'orig');
+      if (!media.some((item) => item.url === source.href)) media.push({ url: source.href, type: 'image', alt: img?.alt || null, width: null, height: null });
+    }
+    if (indices.size && Math.max(...indices) !== indices.size) mediaComplete = false;
+    if (xOwn(post, '[data-testid="tweetPhoto"]') && !media.length) mediaComplete = false;
+    // 本文・画像以外のカードはこの経路では復元できない。部分保存であることを残す。
+    const complete = !post.querySelector(`${X_QUOTE_CARD}, [data-testid="card.wrapper"], [data-testid="poll"]`) && !xOwn(post, '[data-testid="tweet-text-show-more-link"]');
+    meta.snapshot = { url: link.url, media, mediaComplete, complete };
+  }
   return meta;
 }
 
@@ -296,16 +326,28 @@ function xSnowflakeDate(id) {
 //
 // entities.urls[].indices ではなく、素の t.co の文字列で split/join する。indices は Twitter
 // 自身が元の本文に対して数えた文字位置で、サロゲートペアの数え方も独自にある。一方、短縮 URL
-// そのものは一意で曖昧さの無い部分文字列＝それで突き合わせれば位置の計算が要らないし、先の
-// 置き換えで文字列の長さが変わってもずれようがない。
+// そのものは一意で曖昧さの無い部分文字列＝それで突き合わせれば位置の計算が要らない。
+// ただし展開後の URL は以後の置換対象に戻さない。そこに別の t.co URL が複数含まれると、連鎖的
+// な置換で入力に無い文字列が際限なく増幅され得るため、置換対象は常に元の本文の断片だけにする。
 function xExpandUrls(text: string, entities): string {
   const urls = entities && Array.isArray(entities.urls) ? entities.urls : [];
-  let out = text;
+  let fragments = [{ text, expandable: true }];
   for (const u of urls) {
-    if (!u || typeof u.url !== 'string' || typeof u.expanded_url !== 'string') continue;
-    out = out.split(u.url).join(u.expanded_url);
+    if (!u || typeof u.url !== 'string' || !u.url || typeof u.expanded_url !== 'string') continue;
+    fragments = fragments.flatMap((fragment) => {
+      if (!fragment.expandable) return [fragment];
+      const parts = fragment.text.split(u.url);
+      return parts.flatMap((part, index) =>
+        index < parts.length - 1
+          ? [
+              { text: part, expandable: true },
+              { text: u.expanded_url, expandable: false },
+            ]
+          : [{ text: part, expandable: true }],
+      );
+    });
   }
-  return out;
+  return fragments.map((fragment) => fragment.text).join('');
 }
 
 // X 自身の編集の履歴が2件以上あるか (#189)。edit_control.edit_tweet_ids は各版の tweet ID を
@@ -536,11 +578,11 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       return rec;
     }
     const j = res.data;
-    // 制限を明示した応答だけを DOM 取得の対象にする。
-    // 空の tombstone は理由が分からないため、年齢制限と推測しない。
+    // 埋め込み対象外の応答は、画面の投稿を確認して補完する。
+    // 空の tombstone の理由を年齢制限と断定しない。
     if (j && j.__typename === 'TweetTombstone') {
       const t = (j.tombstone && j.tombstone.text && j.tombstone.text.text) || '';
-      rec.metaError = /limits who can view/i.test(t) ? 'protected' : /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'unavailable';
+      rec.metaError = /deleted|no longer exists|suspended/i.test(t) ? 'unavailable' : /limits who can view/i.test(t) ? 'protected' : /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'embedUnavailable';
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
@@ -575,6 +617,7 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     rec.hashtags = xHashtags(j);
     rec.mediaType = xMediaType(j.mediaDetails);
     rec.media = xMedia(j.mediaDetails);
+    if (rec.media.length < (j.mediaDetails?.length ?? 0)) acquisitionFailed(rec, 'media', 'unavailable');
     if (j.quoted_tweet) {
       rec.isQuote = true;
       // screen_name を守る。quoted_tweet は screen_name を持たない user オブジェクトを

@@ -26,12 +26,14 @@ const notify = () => {
   }
 };
 export function open(config: HologramConfirmConfig) {
-  current = Object.assign({ openId: ++seq }, config);
+  const openId = ++seq;
+  current = Object.assign({ openId }, config);
   notify();
+  return openId;
 }
 /** 開いている確認を閉じずに内容だけ更新する。ドロップ直後の待機表示に使う。 */
-export function update(config: Partial<HologramConfirmConfig>): boolean {
-  if (!current) return false;
+export function update(config: Partial<HologramConfirmConfig>, expectedOpenId?: number): boolean {
+  if (!current || (expectedOpenId != null && current.openId !== expectedOpenId)) return false;
   current = Object.assign({}, current, config, { openId: current.openId });
   notify();
   return true;

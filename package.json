@@ -23,6 +23,7 @@
     "fast-check": "^4.10.1",
     "jsdom": "^30.1.0",
     "jszip": "3.10.2",
+    "markdownlint-cli2": "0.23.3",
     "playwright": "^1.62.0",
     "postcss": "^8.5.28",
     "typescript": "^7.0.2",
@@ -32,9 +33,8 @@
   },
   "overrides": {
     "adm-zip": "0.6.0",
-    "brace-expansion": "5.0.9",
     "js-yaml": "^4.3.2",
-    "sharp": "0.35.3"
+    "sharp": "0.35.5"
   },
   "scripts": {
     "ext:build": "node scripts/build-extension.cts",
@@ -43,6 +43,7 @@
     "app:deploy": "node scripts/deploy-app.cts",
     "ext:dev:open": "node scripts/open-dev-profile.cts",
     "ext:dev:status": "node scripts/open-dev-profile.cts --print",
+    "ext:dev:run": "node scripts/run-dev-browser.cts",
     "ext:dev:open:marker": "node scripts/open-dev-profile.cts --marker",
     "ext:dev:register": "node scripts/register-dev-native-host.cts",
     "ext:tokens": "node scripts/gen-extension-tokens.cts",
@@ -52,8 +53,11 @@
     "test:ext:orphan": "npm run ext:build:test && playwright test --project=extension-regression extension-orphan",
     "ext:package": "node scripts/zip-extension.cts",
     "setup": "node scripts/setup.cts",
-    "lint": "biome check .",
-    "lint:ci": "biome ci .",
+    "lint": "biome check . && npm run lint:markdown && npm run lint:typos",
+    "lint:ci": "biome ci . && npm run lint:markdown",
+    "lint:markdown": "markdownlint-cli2",
+    "lint:markdown:fix": "markdownlint-cli2 --fix",
+    "lint:typos": "typos",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "check:content": "node scripts/guard-repository-content.cts --staged",

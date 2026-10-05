@@ -30,7 +30,6 @@ const SOURCE_EXTENSION = path.join(ROOT, 'extension', '.output', 'chrome-mv3-tes
 const PRODUCTION_NATIVE_HOST = 'com.hologram.host';
 
 interface StageExtensionOptions {
-  allUrls?: boolean;
   nativeHostName?: string;
   tempPrefix?: string;
 }
@@ -73,12 +72,6 @@ function stageExtension(options: StageExtensionOptions = {}): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), options.tempPrefix || 'hologram-extension-e2e-'));
   copyDirectory(SOURCE_EXTENSION, directory);
 
-  if (options.allUrls) {
-    const manifestPath = path.join(directory, 'manifest.json');
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''));
-    manifest.host_permissions = Array.from(new Set([...(manifest.host_permissions || []), '<all_urls>']));
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
-  }
   if (options.nativeHostName && options.nativeHostName !== PRODUCTION_NATIVE_HOST) {
     replaceNativeHostName(directory, options.nativeHostName);
   }

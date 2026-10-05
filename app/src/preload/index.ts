@@ -145,7 +145,7 @@ const api = {
   ugoiraFramesPresent: (file: string, names: string[]): Promise<boolean> => invoke('ugoira-frames-present', file, names),
   // 素の Uint8Array ではなく Uint8Array<ArrayBuffer>。レンダラーはこれをそのまま Blob へ
   // 渡すが、BlobPart は共有されているかもしれない裏のバッファを受け付けない。
-  ugoiraFrame: (file: string, name: string): Promise<Uint8Array<ArrayBuffer> | null> => invoke('ugoira-frame', file, name),
+  ugoiraFrame: (file: string, name: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; width: number; height: number } | null> => invoke('ugoira-frame', file, name),
   deletePost: (image: string): Promise<OkResult> => invoke('delete-post', image),
   updateTags: (...args: IpcArgs<'update-tags'>): Promise<UpdateTagsResult> => invoke('update-tags', ...args),
   // 旧形式の ZIP の取り込みの後半。main は `zipPath`（import-complete が返したパス）にある
@@ -157,7 +157,7 @@ const api = {
   // 引数は無い。main がファイルの選択画面を出し、ディスクから書庫を読む（#485）。
   importComplete: (): Promise<CompleteImportResult> => invoke('import-complete'),
   pickSaveFolder: (): Promise<SaveFolderPickResult> => invoke('pick-save-folder'),
-  moveSaveFolder: (dest: string): Promise<SaveFolderMoveResult> => invoke('move-save-folder', dest),
+  moveSaveFolder: (): Promise<SaveFolderMoveResult> => invoke('move-save-folder'),
   // #37: 今この時点で、現在の保存フォルダがディスク上に無いかどうか。常にその場で確認し、
   // キャッシュしたプッシュは決して使わない（ipc-config.ts の get-library-status を参照）。
   getLibraryStatus: (): Promise<LibraryStatus> => invoke('get-library-status'),

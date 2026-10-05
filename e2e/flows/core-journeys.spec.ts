@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { itemDirectoryAbsolute, itemDirectoryRelative } from '../../native-host/item-storage.mts';
 import { expect, test } from '../lib/harness.ts';
 import { FIXTURE_POSTS } from '../lib/library.ts';
 
@@ -27,7 +28,13 @@ test('起動後に検索して投稿を開き、タグを保存できる', async
 
   await expect(cards).toHaveCount(FIXTURE_POSTS.length);
   const search = page.getByRole('combobox', { name: 'ライブラリ内を検索', exact: true });
-  await search.fill('猫');
+  // 最初の問い合わせは Meilisearch の起動と SQLite からの索引構築も担う。カードの
+  // 初期描画はその完了条件ではないので、検索 API 自身の応答で準備完了を確認する。
+  const indexed = await page.evaluate(() => window.hologram.searchFullText('猫'));
+  expect(indexed.map((hit) => hit.postId)).toContain('e2e-0003');
+  await search.click();
+  await search.pressSequentially('猫');
+  await search.press('Enter');
   await expect(cards).toHaveCount(1);
 
   await cards.first().click();
@@ -46,6 +53,16 @@ test('選択した投稿をゴミ箱へ送り、復元してライブラリへ�
   const { page } = hologram;
   const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   const sidebar = page.locator('[data-slot="sidebar"]').first();
+  const captureId = 'e2e-0004';
+  const mediaBefore = hologram.readDb((sqlite) => sqlite.prepare('SELECT file FROM media WHERE postId = ? ORDER BY seq').all(captureId)) as Array<{ file: string }>;
+  expect(mediaBefore).toHaveLength(1);
+  const mediaFile = mediaBefore[0].file;
+  const liveItemDir = itemDirectoryAbsolute(hologram.saveFolder, captureId);
+  const liveMedia = path.join(hologram.saveFolder, ...mediaFile.split('/'));
+  const trashItemDir = path.join(hologram.saveFolder, '.trash', path.basename(itemDirectoryRelative(captureId)));
+  const trashedMedia = path.join(trashItemDir, path.basename(mediaFile));
+  expect(fs.existsSync(liveItemDir)).toBe(true);
+  expect(fs.existsSync(liveMedia)).toBe(true);
 
   await cards.filter({ hasText: '手描きのラフスケッチ' }).click();
   await cards.filter({ hasText: '手描きのラフスケッチ' }).click({ button: 'right' });
@@ -53,7 +70,10 @@ test('選択した投稿をゴミ箱へ送り、復元してライブラリへ�
   const confirm = page.locator('[data-slot="alert-dialog-content"]');
   await confirm.getByRole('button', { name: '削除する' }).click();
   await expect(cards).toHaveCount(FIXTURE_POSTS.length - 1);
-  expect(fs.existsSync(path.join(hologram.saveFolder, '.trash', 'e2e-0004', 'e2e-0004.png'))).toBe(true);
+  expect(hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get(captureId))).toBeUndefined();
+  expect(hologram.readDb((sqlite) => sqlite.prepare('SELECT file FROM media WHERE postId = ?').all(captureId))).toEqual([]);
+  expect(fs.existsSync(liveMedia)).toBe(false);
+  expect(fs.existsSync(trashedMedia)).toBe(true);
 
   await sidebar.getByRole('button', { name: 'ゴミ箱', exact: true }).click();
   const trashCards = page.locator('[data-slot="trash-grid"] [data-slot="post-card"]');
@@ -64,5 +84,8 @@ test('選択した投稿をゴミ箱へ送り、復元してライブラリへ�
 
   await sidebar.getByRole('button', { name: 'ホーム', exact: true }).click();
   await expect(cards).toHaveCount(FIXTURE_POSTS.length);
-  await expect.poll(() => hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toEqual({ captureId: 'e2e-0004' });
+  await expect.poll(() => hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get(captureId))).toEqual({ captureId });
+  expect(hologram.readDb((sqlite) => sqlite.prepare('SELECT file FROM media WHERE postId = ? ORDER BY seq').all(captureId))).toEqual(mediaBefore);
+  expect(fs.existsSync(liveMedia)).toBe(true);
+  expect(fs.existsSync(trashedMedia)).toBe(false);
 });

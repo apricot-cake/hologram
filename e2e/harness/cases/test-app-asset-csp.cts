@@ -46,8 +46,7 @@ const PNG = 'dummy-csp-0001.png';
 const SVG = 'dummy-csp-0002.svg';
 const SECRET = 'dummy-csp-secret.txt';
 const SECRET_TEXT = 'library-private-9e3f';
-// このハーネスの他の誰も要求しないサムネイル幅なので、この幅のキャッシュ
-// ファイルは CSS の background だけがハンドラに届いた証拠になる。
+// この幅の要求は CSS background だけが行い、CDP で完了まで確認する。
 const BG_W = 200;
 
 // base64 でインラインにするのではなく生成した、本物のべた塗り色 PNG:
@@ -233,17 +232,6 @@ async function main() {
       const imgThumb = await load(`asset://img/${args.png}?w=180`);
       const imgSvg = await load(`asset://img/${args.svg}`);
 
-      // CSS の background（PostCard のスタックシート）。レンダラー内の何も、
-      // background 画像が読み込まれたかどうかを報告しない — getComputedStyle
-      // はどちらにせよ宣言をそのまま返すだけで、このスキームでは resource
-      // timing も何も記録しない。そこで証拠は「外」で取る: ?w=<args.bgW> は
-      // ここの他の誰も要求しない幅で、それを配信すると main がそのサムネイル
-      // をキャッシュディレクトリへ書き出す。
-      const d = document.createElement('div');
-      d.style.cssText = `position:fixed;left:0;top:0;z-index:-1;opacity:0;width:10px;height:10px;background-image:url("asset://img/${args.png}?w=${args.bgW}")`;
-      document.body.appendChild(d);
-      void d.getBoundingClientRect();
-
       // 固定時間で、background に必要な待ちはこれだけ: 下の保持がすでに、
       // main がそのサムネイルを書くのにかかるどんな時間よりも長い（かつて
       // ここに別立てであった1500msの落ち着きは、この中に収まっていた）。
@@ -278,6 +266,7 @@ async function main() {
   let cdpDocType = '';
   let cdpNote = '';
   let rasterRendered = false;
+  let cssBg = false;
   try {
     let viewer: any = null;
     await waitFor(
@@ -293,6 +282,30 @@ async function main() {
       { timeoutMs: 30_000, pollMs: 500 },
     );
     const { ws, send } = await cdpConnect(viewer.webSocketDebuggerUrl);
+    // キャッシュ形式や終了時の削除に依存せず、CSS が要求した画像の実応答を確認する。
+    const mainTarget = (await cdpList(cdpPort)).find((t) => t.type === 'page' && !String(t.url).startsWith('asset://'));
+    const mainCdp = await cdpConnect(mainTarget.webSocketDebuggerUrl);
+    try {
+      const backgroundUrl = `asset://img/${PNG}?w=${BG_W}`;
+      let requestId = '';
+      let finished = false;
+      mainCdp.ws.on('message', (data) => {
+        const message = JSON.parse(data.toString());
+        if (message.method === 'Network.responseReceived' && message.params.response.url === backgroundUrl && message.params.response.status === 200 && message.params.response.mimeType.startsWith('image/')) requestId = message.params.requestId;
+        if (message.method === 'Network.loadingFinished' && message.params.requestId === requestId) finished = true;
+      });
+      await mainCdp.send('Network.enable');
+      await mainCdp.send('Runtime.evaluate', {
+        expression: `(() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:0;top:0;z-index:-1;opacity:0;width:10px;height:10px;background-image:url("${backgroundUrl}")'; document.body.appendChild(d); d.getBoundingClientRect(); })()`,
+      });
+      await waitFor('CSS background の画像応答が完了すること', () => finished, { timeoutMs: 5_000, pollMs: 50 });
+      const body = await mainCdp.send('Network.getResponseBody', { requestId });
+      const bytes = Buffer.from(body.body, body.base64Encoded ? 'base64' : 'utf8');
+      const metadata = await require('sharp')(bytes).metadata();
+      cssBg = !!metadata.width && !!metadata.height;
+    } finally {
+      mainCdp.ws.close();
+    }
     await send('Page.enable');
     await send('Runtime.enable');
     // 乗っ取る前に: ラスタのウィンドウは、実際に出荷する文書に応答の CSP が
@@ -309,7 +322,7 @@ async function main() {
     await sleep(2500);
     const r = await send('Runtime.evaluate', { expression: '[document.contentType, location.href].join(" ")', returnByValue: true });
     cdpDocType = String(r?.result?.value || '');
-    cdpReachedSvg = cdpDocType.includes('svg') && cdpDocType.includes(SVG);
+    cdpReachedSvg = cdpDocType.startsWith('image/svg+xml ') && cdpDocType.includes(SVG);
     // 固定時間: 主張は「ビーコンが一度も届かない」ことなので、この観測窓
     // 自体が検証そのもの — 生き残ったスクリプトにビーコンを送る時間を
     // 与えなければならない。
@@ -328,14 +341,6 @@ async function main() {
     r = JSON.parse((m && m[1]) as string);
   } catch {
     /* 空のまま残す — 下の主張がすべて失敗する。これが正しい答え */
-  }
-
-  // CSS background に対するディスク側の証拠（eval のコメントを参照）。
-  let cssBg = false;
-  try {
-    cssBg = fs.readdirSync(path.join(configDir, 'thumb-cache')).some((f) => f.endsWith(`.w${BG_W}.q4.jpg`));
-  } catch {
-    /* キャッシュディレクトリすら無い＝何も配信されなかった＝失敗 */
   }
 
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -358,7 +363,7 @@ async function main() {
   check('退行なし <img> でラスタ原寸が表示できる', r.imgPng === true);
   check('退行なし <img> でサムネイル（?w=）が表示できる', r.imgThumb === true);
   check('退行なし <img> で SVG が絵として表示できる（文書化しないので安全）', r.imgSvg === true);
-  check('退行なし CSS background-image が読み込まれる（サムネイルが生成された）', cssBg === true);
+  check('退行なし CSS background-image の画像応答が完了して復号できる', cssBg === true);
 
   console.log('\n' + (ok ? 'ASSET_CSP_TEST_PASS' : 'ASSET_CSP_TEST_FAIL'));
   process.exit(ok ? 0 : 1);

@@ -16,7 +16,8 @@ describe('取得完了の判定', () => {
     const record = emptyRecord('https://example.com', 'x');
     record.metaError = reason;
     expect(acquisitionComplete(record, [])).toBe(false);
-    expect(acquisitionComplete(record, ['text', 'displayName'])).toBe(true);
+    expect(acquisitionComplete(record, ['text', 'displayName'])).toBe(false);
+    expect(acquisitionComplete(record, ['post'])).toBe(true);
   });
   test('未知の失敗は DOM の値があっても完了にしない', () => {
     const record = emptyRecord('https://example.com', 'x');

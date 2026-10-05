@@ -21,6 +21,7 @@ type Handler = (event: unknown, ...args: any[]) => any;
 const stub = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: any[]) => any>(),
   toasts: [] as string[],
+  prepare: vi.fn<(...args: any[]) => Promise<{ path: string; mime: string } | null>>(async () => null),
 }));
 
 vi.mock('electron', () => ({
@@ -34,9 +35,9 @@ vi.mock('electron', () => ({
     showSaveDialog: async () => ({ canceled: true }),
   },
   clipboard: { read: async () => [] },
-  nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
   app: { getVersion: () => '0.0.0-test' },
 }));
+vi.mock('../../app/src/main/image-processing.ts', () => ({ getPreparedImage: stub.prepare, prepareImageBytes: vi.fn(async () => null) }));
 
 vi.mock('sonner', () => ({
   toast: Object.assign(
@@ -58,6 +59,20 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
   afterAll(() => {
     fs.rmSync(root, { recursive: true, force: true });
   });
+
+  afterEach(() => {
+    stub.prepare.mockClear();
+  });
+
+  function pngHeader(width: number, height: number): Buffer {
+    const header = Buffer.alloc(24);
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(header);
+    header.writeUInt32BE(13, 8);
+    header.write('IHDR', 12, 'ascii');
+    header.writeUInt32BE(width, 16);
+    header.writeUInt32BE(height, 20);
+    return header;
+  }
 
   test('単一ファイルは1件・メディア判定される', async () => {
     const dir = fs.mkdtempSync(path.join(root, 'single-'));
@@ -101,6 +116,30 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
     ]);
     expect(res.files.find((file) => path.basename(file.path) === 'top.png')).toMatchObject({ folderRoot: 0, folderRootTitle: path.basename(dir), folderIsRoot: true });
     expect(res.files.find((file) => path.basename(file.path) === 'mid.jpg')).toMatchObject({ folderRoot: 0, folderRootTitle: path.basename(dir) });
+  });
+
+  test('共通画像境界が拒否した画像は確認用プレビューへ渡さない', async () => {
+    const dir = fs.mkdtempSync(path.join(root, 'large-preview-'));
+    const large = path.join(dir, 'large.png');
+    fs.writeFileSync(large, pngHeader(8192, 8192));
+
+    const res = await collectDroppedPaths([dir]);
+
+    expect(res.mediaCount).toBe(1);
+    expect(res.groups[0]).not.toHaveProperty('previewDataUrl');
+    expect(stub.prepare).toHaveBeenCalledWith(large, { kind: 'copy', width: 72 });
+  });
+
+  test('上限内の画像は従来どおり確認用プレビューを生成する', async () => {
+    const dir = fs.mkdtempSync(path.join(root, 'safe-preview-'));
+    const safe = path.join(dir, 'safe.png');
+    fs.writeFileSync(safe, pngHeader(1920, 1080));
+    const prepared = path.join(root, 'prepared.png');
+    fs.writeFileSync(prepared, 'safe-derived-image');
+    stub.prepare.mockResolvedValueOnce({ path: prepared, mime: 'image/png' });
+    const result = await collectDroppedPaths([dir]);
+    expect(stub.prepare).toHaveBeenCalledWith(safe, { kind: 'copy', width: 72 });
+    expect(result.groups[0].previewDataUrl).toBe(`data:image/png;base64,${Buffer.from('safe-derived-image').toString('base64')}`);
   });
 
   test('ファイル＋フォルダ混在は合算して1回分のカウントになる', async () => {
@@ -158,6 +197,15 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
   test('存在しないパスは静かに無視される（ドロップ後に消えた等）', async () => {
     const res = await collectDroppedPaths([path.join(root, 'does-not-exist')]);
     expect(res.files).toHaveLength(0);
+  });
+
+  test('走査上限を超えるフォルダは部分的な一覧を返さない', async () => {
+    const dir = fs.mkdtempSync(path.join(root, 'limited-'));
+    for (let i = 0; i < 4; i++) fs.writeFileSync(path.join(dir, `${i}.png`), 'x');
+
+    const res = await collectDroppedPaths([dir], { maxEntries: 3 });
+
+    expect(res).toEqual({ files: [], mediaCount: 0, groups: [], error: 'scan-limit' });
   });
 });
 
@@ -390,6 +438,47 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
     expect(confirm.get()).toBeNull();
     expect(calls.import).toEqual([collectAnswer.files]);
     expect(stub.toasts).toEqual(['1 件インポートしました']);
+  });
+
+  test.each(['success', 'empty', 'scan-limit', 'failure'] as const)('キャンセルした走査の%sが次の確認を変更しない', async (outcome) => {
+    let resolveFirst!: (value: any) => void;
+    let rejectFirst!: (reason: Error) => void;
+    let resolveSecond!: (value: any) => void;
+    const firstAnswer = new Promise((resolve, reject) => {
+      resolveFirst = resolve;
+      rejectFirst = reject;
+    });
+    const secondAnswer = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+    const answers = [firstAnswer, secondAnswer];
+    (globalThis as any).window.hologram.collectDroppedPaths = async () => answers.shift();
+    const drop = await freshDropIntake();
+    const confirm = await import('../../app/src/renderer/src/services/confirm');
+
+    const first = drop.handleDroppedPaths(['/first']);
+    confirm.close();
+    const second = drop.handleDroppedPaths(['/second']);
+    const secondModel = confirm.get();
+    if (outcome === 'failure') rejectFirst(new Error('scan failed'));
+    else if (outcome === 'scan-limit') resolveFirst({ files: [], mediaCount: 0, groups: [], error: 'scan-limit' });
+    else if (outcome === 'empty') resolveFirst({ files: [], mediaCount: 0, groups: [] });
+    else resolveFirst({ files: [{ path: '/first.png', ext: 'png' }], mediaCount: 1, groups: [] });
+    await first;
+    expect(confirm.get()).toBe(secondModel);
+    expect(confirm.get()).toMatchObject({ loading: true });
+    expect(calls.import).toEqual([]);
+    expect(stub.toasts).toEqual([]);
+
+    const secondFiles = [
+      { path: '/second-a.png', ext: 'png' },
+      { path: '/second-b.png', ext: 'png' },
+    ];
+    resolveSecond({ files: secondFiles, mediaCount: 2, groups: [] });
+    await second;
+    expect(confirm.get()).toMatchObject({ openId: secondModel?.openId, loading: false, message: '2 件の画像・動画を取り込みますか？' });
+    confirm.get()?.onOk({ skip: false });
+    await vi.waitFor(() => expect(calls.import).toEqual([secondFiles]));
   });
 
   test('2件以上なら確定した件数を確認し、OK で import が呼ばれる', async () => {

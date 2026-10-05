@@ -147,8 +147,21 @@ describe('生成された manifest は登録簿の宣言どおり', () => {
     expect([...matches].sort()).toEqual([...RESIDENT_MATCHES].sort());
   });
 
-  test('host_permissions は API_HOST_PERMISSIONS と一致する', () => {
-    expect([...manifest.host_permissions].sort()).toEqual([...API_HOST_PERMISSIONS].sort());
+  test('host_permissions は API 通信と常駐スクリプトのホストだけを重複なく許可する', () => {
+    const expected = [...new Set([...API_HOST_PERMISSIONS, ...RESIDENT_MATCHES])];
+    expect([...manifest.host_permissions].sort()).toEqual(expected.sort());
+    expect(manifest.host_permissions).toHaveLength(expected.length);
+    expect(manifest.host_permissions.every((pattern: string) => pattern.startsWith('https://'))).toBe(true);
+  });
+
+  test('更新後の再注入は全常駐サイトのホスト権限で実行でき、手動保存の activeTab を維持する', () => {
+    const residentHosts = new Set(RESIDENT_MATCHES);
+    expect(residentHosts).toEqual(new Set(['https://x.com/*', 'https://twitter.com/*', 'https://bsky.app/*', 'https://www.pixiv.net/*', 'https://pixiv.net/*']));
+    for (const host of residentHosts) expect(manifest.host_permissions).toContain(host);
+    expect(manifest.host_permissions).toHaveLength(6);
+    expect(manifest.permissions).toContain('activeTab');
+    expect(manifest.permissions).toContain('alarms');
+    expect(manifest.permissions).not.toContain('tabs');
   });
 });
 

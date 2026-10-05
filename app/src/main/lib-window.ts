@@ -11,9 +11,11 @@
 // は、メインプロセス全体が触れるファイルスコープの変数であることをやめ、1つのモジュールの状態に
 // なった。
 //
-// getWin() は今も「主ウィンドウ」（この実行で最初に作られたもの）を意味する＝#32 を越えて残る
-// 単一ウィンドウの形をした概念（位置と大きさの永続化、tabs.json、常にウィンドウ1つで走る
-// SMOKE/SANDBOX のハーネス）は全部これを読む。呼んできたウィンドウそのものに対して働かなければ
+// getWin() は利用者への配送先となる、生きている最古のウィンドウを意味する。最初のウィンドウを
+// 閉じても副ウィンドウへ second-instance / activate / 投稿リンクを届け続けるための概念であり、
+// tabs.json を永続化できる「主ウィンドウの同一性」とは別物である。後者は
+// isPrimaryWindowSender() が、最初に作った webContents の id を不変に保持して判定する。
+// 呼んできたウィンドウそのものに対して働かなければ
 // ならないハンドラ（window-control、ファイルダイアログの親）は、代わりに自分の呼び出し箇所で
 // BrowserWindow.fromWebContents(event.sender) を読む＝ipc-config.ts / ipc-transfer.ts /
 // ipc-backup.ts を参照。
@@ -24,6 +26,7 @@
 // ここでログを出すと、その行が、説明の対象であるログとは別の場所へ着地してしまう。
 
 import { app, BrowserWindow, nativeTheme, screen } from 'electron';
+import { hideBackgroundWindows } from './background-launch.ts';
 import { titlebarOptions, trackTitlebar } from './lib-titlebar.ts';
 import log from 'electron-log/main';
 import path from 'node:path';
@@ -59,10 +62,16 @@ const RELOAD_AFTER_LIBRARY_SWAP_MS = 2000;
 // もの＝は常に windows[0]）。Set にすると、大した理由も無くその順序を失う。配列が一番単純だし、
 // この集合の要素は数えるほどにしかならない。
 const windows: BrowserWindow[] = [];
+let primaryWebContentsId: number | null = null;
 
-/** 主ウィンドウ（この実行で最初に作られたもの）。その前後では null。 */
+/** 利用者への配送先となる、生きている最古のウィンドウ。 */
 function getWin(): BrowserWindow | null {
   return windows[0] || null;
+}
+
+/** tabs.json を読み書きできる、起動時の主ウィンドウの送り手か。閉鎖後も副窓へ権限を移さない。 */
+function isPrimaryWindowSender(webContentsId: number): boolean {
+  return primaryWebContentsId === webContentsId;
 }
 
 /** 生きているウィンドウの全部、古い順。 */
@@ -264,7 +273,7 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     minHeight: 480,
     // E2E はCDPで操作する。画面上のウィンドウは利用者の作業を遮るだけなので、明示的に
     // 非表示へ固定する。paintWhenInitiallyHidden によりレンダラーの検証は継続する。
-    show: show && process.env.HOLOGRAM_E2E_HIDDEN !== '1',
+    show: show && !hideBackgroundWindows(process.argv, process.env),
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
     title: 'Hologram',
     icon: APP_ICON,
@@ -278,6 +287,7 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
       backgroundThrottling: false,
     },
   });
+  if (!secondary) primaryWebContentsId = win.webContents.id;
   windows.push(win);
   trackTitlebar(win);
   // ハーネスのウィンドウの大きさは、上のコンストラクタではなく生成の後で決める。Electron は
@@ -343,4 +353,4 @@ function sendWindowToBack(w: BrowserWindow): void {
   }
 }
 
-export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, devServer, createWindow, getWin, getWindows, installNavigationGuards, isDarkTheme, resolveTheme, sendToOtherWins, sendToWin, sendWindowToBack };
+export { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, devServer, createWindow, getWin, getWindows, installNavigationGuards, isDarkTheme, isPrimaryWindowSender, resolveTheme, sendToOtherWins, sendToWin, sendWindowToBack };

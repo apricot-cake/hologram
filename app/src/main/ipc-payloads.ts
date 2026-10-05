@@ -27,6 +27,8 @@ export interface PostsSnapshot {
 export interface PostsDelta {
   saveFolder: string | null;
   full: boolean;
+  /** ライブラリ移動のため DB を一時的に閉じている。既存表示を変更せず再通知を待つ。 */
+  paused?: boolean;
   posts?: IpcPostRecord[];
   added?: IpcPostRecord[];
   removed?: string[];
@@ -139,7 +141,7 @@ export interface RenameCollision {
   postCount: number;
   posterCount: number;
 }
-export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' | 'too-long' } | { ok: false; collision: RenameCollision };
 /** タグ語彙への書き込みの単純な結果（merge-tags、set-tag-group）。 */
 export interface TagWriteResult {
   ok: boolean;
@@ -383,13 +385,13 @@ export interface SaveFolderMoveResult {
 
 /**
  * pick-save-folder: 移動の結果、キャンセルされたダイアログ、または利用者が
- * 先に警告を受け入れる必要がある移動先（`confirm` + `dest`、#95）のいずれか。
+ * main 所有の警告で承認され、一回限りの移動許可が用意された状態（`confirm`、#95）
+ * のいずれか。移動先は信頼境界を越えて renderer へ渡さない。
  */
 export interface SaveFolderPickResult extends SaveFolderMoveResult {
   canceled?: boolean;
   confirm?: string;
   provider?: string;
-  dest?: string;
 }
 
 /** push される `save-folder-progress` イベント。移動の各段階ごとに1回。 */

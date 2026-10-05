@@ -69,9 +69,9 @@ async function hoverControlCount(page: any): Promise<number> {
     .poll(async () => {
       await page.mouse.move(5, 5);
       await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
-      return overlayCount(page);
+      return page.evaluate((photoIndex: number) => document.querySelectorAll('[data-testid="tweetPhoto"]')[photoIndex].querySelectorAll('[data-hologram-overlay]').length, index);
     })
-    .toBeGreaterThan(0);
+    .toBe(1);
   return overlayCount(page);
 }
 
@@ -90,7 +90,6 @@ const residentStatus = (worker: any) =>
 test('extension-orphan', async () => {
   const extensionDir = stageExtension({
     tempPrefix: 'hologram-orphan-e2e-',
-    allUrls: true,
     nativeHostName: `com.hologram.host.orphan_e2e_${process.pid}`,
   });
   const manifestPath = path.join(extensionDir, 'manifest.json');
@@ -108,6 +107,8 @@ test('extension-orphan', async () => {
     bookmarks.on('pageerror', (error: any) => pageErrors.push(String(error?.message || error)));
 
     check((await hoverControlCount(home)) > 0, 'ベースライン: 常駐スクリプトはホバー保存を描画する');
+    const oldControls = await home.locator('[data-hologram-overlay]').elementHandles();
+    expect(oldControls.length).toBeGreaterThan(0);
 
     await browser.serviceWorker.evaluate('chrome.runtime.reload()').catch(() => {});
 
@@ -144,6 +145,8 @@ test('extension-orphan', async () => {
     );
 
     check((await hoverControlCount(home)) > 0, 'ページをリロードしなくても、更新後のホームでホバー保存が復帰する');
+    await expect.poll(async () => Promise.all(oldControls.map((handle: any) => handle.evaluate((element: Element) => element.isConnected)))).toEqual(oldControls.map(() => false));
+    check(await home.evaluate(() => [...document.querySelectorAll('[data-testid="tweetPhoto"]')].every((photo) => photo.querySelectorAll('[data-hologram-overlay]').length <= 1)), '更新後の画像に保存操作が重複しない');
     await bookmarks.mouse.move(5, 5);
     for (let i = 0; i < 6; i++) {
       await bookmarks.mouse.wheel(0, 400);

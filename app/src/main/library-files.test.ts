@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { resolveInSaveFolder } from './lib-save-folder-path';
 import { isLibraryFileName, isViewerImageName, libraryFilePath, libraryStoragePath } from './library-files';
 
-const save = path.resolve(path.sep === '\\' ? 'C:\\Hologram\\library' : '/home/alice/Hologram/library');
+const save = path.resolve(path.sep === '\\' ? 'C:\\Hologram\\Library' : '/home/alice/Hologram/Library');
 const at = (f: string) => path.join(save, f);
 
 describe('isLibraryFileName（ゲート）', () => {
@@ -78,7 +78,7 @@ describe('libraryFilePath（OS 操作用パスの解決）', () => {
     expect(libraryFilePath(name, save)).toBeNull();
   });
 
-  test.each(['C:\\Windows\\system32\\calc.exe', '/etc/passwd', '\\\\server\\share\\x.jpg', 'C:/Hologram/library/a.jpg'])('絶対パスは弾く（basename へ潰して通さない）: %s', (name) => {
+  test.each(['C:\\Windows\\system32\\calc.exe', '/etc/passwd', '\\\\server\\share\\x.jpg', 'C:/Hologram/Library/a.jpg'])('絶対パスは弾く（basename へ潰して通さない）: %s', (name) => {
     expect(libraryFilePath(name, save)).toBeNull();
   });
 

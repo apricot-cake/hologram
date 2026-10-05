@@ -38,6 +38,9 @@ interface QbCtx {
   multiValueTypes?: string[];
   standaloneTypes?: string[];
   onLeafMutated?: (node: HologramQueryLeaf) => void;
+  // post では ID なし `__none` が「タグなし」番兵。poster にはその概念がなく、
+  // 同じ値は保存済み name-only の実タグとして通常の名前 fallback を使う。
+  tagNoneIsSentinel?: boolean;
 }
 
 export function createQueryBuilder(ctx: QbCtx) {
@@ -57,7 +60,8 @@ export function createQueryBuilder(ctx: QbCtx) {
   // #774: タグの葉版。ファセット行は1つの tags テーブル行を表すので、その
   // 実体を持つ葉によって点灯する――sameLeaf は両側が id を知っていれば
   // それを比較し、どちらかが知らないときだけ名前へフォールバックする。
-  const qHasTag = (tagId: number | null | undefined, value: string) => hasSameLeaf(tree, { type: 'tag', value, tagId });
+  const sameLeafOptions = { tagNoneIsSentinel: ctx.tagNoneIsSentinel !== false };
+  const qHasTag = (tagId: number | null | undefined, value: string) => hasSameLeaf(tree, { type: 'tag', value, tagId }, sameLeafOptions);
   const removeCondsMatching = (pred: (c: HologramQueryLeaf) => boolean) => removeCondsMatchingQ(tree, pred);
   // 下の `.shadow()` が公開する、フラットな（重複除去済みの）葉のシャドウを
   // 作り直す。木を ctx.storeKey の下で hologramStore へも映す。毎回新しい
@@ -99,7 +103,7 @@ export function createQueryBuilder(ctx: QbCtx) {
     // 同一性は sameLeaf のもので、単純な type+value ではない: tagId を
     // 持つタグの葉は実体そのものなので、同名の2つのタグのうち2つ目は
     // 重複ではない（#774）。
-    else if (!noDupTypes.includes(filter.type) && hasSameLeaf(tree, filter)) return null;
+    else if (!noDupTypes.includes(filter.type) && hasSameLeaf(tree, filter, sameLeafOptions)) return null;
     const node = Object.assign({ kind: 'cond' as const }, filter);
     if (facetViewOf(tree, facetOpts)) facetAdd(tree, node, facetOpts);
     else tree.children.push(node);
@@ -113,7 +117,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   function removeFilter(index: number) {
     const f = shadow[index];
     if (!f) return;
-    removeCondsMatching((c) => sameLeaf(c, f));
+    removeCondsMatching((c) => sameLeaf(c, f, sameLeafOptions));
     refresh();
   }
   function removeNode(node: HologramQueryLeaf) {

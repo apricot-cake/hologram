@@ -53,6 +53,7 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'date', dateField: 'capturedAt', from: '2026-01-01' }, '取得日: D:2026-01-01〜'],
     [{ type: 'tag', value: '風景' }, '風景'],
     [{ type: 'tag', value: '__none' }, 'タグなし'], // 番兵の値もチップとして名前を出す (P2⑬)
+    [{ type: 'tag', value: '__none', tagId: 7, label: '__none（実タグ）' }, '__none（実タグ）'],
     [{ type: 'hashtag', value: 'art' }, '#art'],
     [{ type: 'media', value: 'image' }, '画像のみ'],
     [{ type: 'media', value: 'video' }, '動画'],
@@ -385,6 +386,29 @@ describe('sanitizeSavedTabs', () => {
     expect(restored.tabs[0].state?.search).toBe('猫');
     expect(restored.tabs[0]._scrollTop).toBe(55);
     expect(JSON.parse(restored.tabs[0]._navHist![0]).kind).toBe('posts');
+  });
+  test.each([
+    ['view 欠落', { scrollTop: 55, autoTitle: true }, null],
+    ['view が null', { view: null, scrollTop: 55, autoTitle: true }, null],
+    ['旧 direct view', { tree: null, search: '犬', sort: 'date-asc', scrollTop: 55, autoTitle: true }, { tree: null, search: '犬', sort: 'date-asc' }],
+  ])('%s を正準形として復元し、metadata を保つ', (_name, state, expectedView) => {
+    const restored = sanitizeSavedTabs({ tabs: [{ id: 'a', state }] }, genId)!;
+
+    expect(restored.tabs[0].state).toEqual(expectedView);
+    expect(restored.tabs[0]._scrollTop).toBe(55);
+    expect(restored.tabs[0]._autoTitle).toBe(true);
+    const persisted = serializeTabs(restored.tabs, restored.activeTabId);
+    expect(persisted.tabs[0].state.view).toEqual(expectedView);
+    expect(persisted.tabs[0].state.scrollTop).toBe(55);
+  });
+  test('旧 direct view と wrapper の未知フィールドを復元・再保存しても保持する', () => {
+    const restored = sanitizeSavedTabs({ tabs: [{ id: 'a', state: { f: [], futureView: { mode: 'new' }, scrollTop: 9, futureMetadata: { selected: ['p1'] } } }] }, genId)!;
+    const persisted = serializeTabs(restored.tabs, restored.activeTabId);
+
+    expect(restored.tabs[0].state?.futureView).toEqual({ mode: 'new' });
+    expect(persisted.tabs[0].state.view?.futureView).toEqual({ mode: 'new' });
+    const metadata = sanitizeSavedTabs({ tabs: [{ id: 'b', state: { view: null, futureMetadata: { selected: ['p1'] } } }] }, genId)!;
+    expect(serializeTabs(metadata.tabs, metadata.activeTabId).tabs[0].state.futureMetadata).toEqual({ selected: ['p1'] });
   });
 });
 

@@ -1,4 +1,5 @@
 import { subscribeSearch, searchRevision } from '../services/search-results.ts';
+import { isComposing } from '../_shared/composition.ts';
 import { subscribe as subscribePosts, getGeneration } from '../services/posts-data.ts';
 import type { MessageKey } from '../services/translation.ts';
 import { Autocomplete } from '@base-ui/react/autocomplete';
@@ -60,7 +61,7 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
     // IME の変換中の Enter と Esc は変換の操作であって、この面に対する操作ではない。
     // Base UI も which=229 で Enter を塞ぐが、このハンドラの方が先に走るので、両方で
     // 見なければならない（#28 と同じ落とし穴）。
-    if (e.nativeEvent.isComposing) return;
+    if (isComposing(e.nativeEvent)) return;
     // Esc は候補のポップアップだけでなく入力欄ごと閉じ、「+」へ戻す（候補が1つも無いときは
     // ポップアップが開いていない＝Base UI の消去が走らない＝ので、これが唯一の逃げ道）。
     if (e.key === 'Escape') {

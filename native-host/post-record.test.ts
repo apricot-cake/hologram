@@ -99,6 +99,10 @@ describe('#8: shotAnimated（カード画像が animated webp か）', () => {
 });
 
 describe('投稿スキーマの検証', () => {
+  test('投票の処理量上限まで選択肢とUTF-16文字列を保持する', () => {
+    const choices = Array.from({ length: 100 }, () => ({ text: '😀'.repeat(500), votes: 0 }));
+    expect(normalizePostRecord({ captureId: 'poll-limit', poll: { choices, multiple: false } }, fixedNow).poll?.choices).toEqual(choices);
+  });
   test('取得値、既定値、タグの正規化を共通定義で組み立てる', () => {
     const rec = normalizePostRecord({ captureId: 'cap-2', likes: 42, sensitive: false, hashtags: [' ＡＢＣ ', 'ABC'], tags: ['猫'], media: [{ url: 'https://example.com/a.jpg', file: 'a.jpg' }], replyToId: 'parent', capturedAt: FIXED_NOW }, fixedNow);
     expect(rec).toMatchObject({ likes: 42, sensitive: false, hashtags: ['ABC'], tags: ['猫'], replyToId: 'parent', capturedAt: FIXED_NOW, updatedAt: FIXED_NOW });
@@ -151,6 +155,9 @@ describe('投稿スキーマの検証', () => {
     { poll: { choices: [] } },
     { poll: { choices: [{ text: '', votes: 1 }] } },
     { poll: { choices: [{ text: 'Yes', votes: '1' }] } },
+    { poll: { choices: Array.from({ length: 101 }, () => ({ text: '選択肢', votes: 0 })) } },
+    { poll: { choices: [{ text: 'a'.repeat(1001), votes: 0 }] } },
+    { poll: { choices: [{ text: '😀'.repeat(501), votes: 0 }] } },
     { linkCard: { title: 'missing url' } },
     { profileLinks: [{ name: 'web' }] },
     { metaSource: { title: 1 } },

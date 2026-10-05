@@ -4,5 +4,5 @@ import type { PostRecord } from './extractor/types.ts';
 export function acquisitionComplete(meta: PostRecord, domFilled: readonly string[]): boolean {
   if (meta.acquisitionIssues.length) return false;
   if (!meta.metaError) return true;
-  return (meta.metaError === 'protected' || meta.metaError === 'ageRestricted') && domFilled.includes('text') && domFilled.includes('displayName');
+  return (meta.metaError === 'protected' || meta.metaError === 'ageRestricted' || meta.metaError === 'embedUnavailable') && domFilled.includes('post');
 }

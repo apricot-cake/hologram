@@ -9,17 +9,22 @@ import { receivePostLink, registerPostLinkProtocol } from './post-link.ts';
 import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
+import { runCompleteArchiveImport, recoverCompleteArchiveImports } from './archive-import';
 import { appActivity } from './app-activity.ts';
+import { runLibraryBackgroundTask, waitForLibraryBackgroundIdle } from './lib-library-background-activity.ts';
+import { runAdmittedLibraryOperation } from './lib-library-admission.ts';
+import { closeLibraryIpcAdmission, isAdmittedLibraryIpc, libraryIpcActivity, openLibraryIpcAdmission, runWhenLibraryAdmissionOpen } from './activity-ipc.ts';
 import { watchAppDeployment } from './app-deployment.ts';
 import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
+import { repairLegacyItemReferences } from './lib-legacy-item-repair.ts';
 import { retireScreenshotImages } from './lib-screenshot-retirement.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb, posterProfilesFromDb } from './lib-db-query.ts';
-import { createDbWriter } from './lib-db-write.ts';
+import { createDbWriter, ensureLibraryId } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
-import { listTrashRecords } from './lib-trash-capture.ts';
+import { listTrashIndexRecords } from './lib-trash-capture.ts';
 import { drainInbox } from './lib-db-inbox.ts';
 import { applyPendingReplacements } from './lib-db-replaces.ts';
 import { compactInbox } from './lib-db-inbox-compact.ts';
@@ -29,6 +34,7 @@ import { writeFileAtomicSync } from './lib-atomic.ts';
 import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 // 保存先フォルダの移設エンジン（コピー＋追いつき → 切り替え → 検証済みの後始末 → 掃き寄せ）。
 import { relocateLibrary } from './lib-migrate.ts';
+import { establishWatcherAndFinalDrain, notifyOrganizationAfterRelocation, waitForWatcherReady } from './lib-library-relocation-lifecycle.ts';
 // このファイルから切り出したサブシステム（#227）＝機械的な移動で、ロジックは変えていない。
 // 各モジュールのヘッダに、何を持って行き、何を意図して残したかが書いてある。ここに残るのは
 // 組み立てと、そのすべてが共有するレコードのパイプライン（設定 → DB → 取込キュー →
@@ -39,10 +45,11 @@ import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolder
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { createLibrarySafety, latestRestorableSnapshot, readIntegrityStatus, validateSaveFolder } from './lib-library-safety.ts';
 import { classifyLibraryFolder } from './lib-library-folder.ts';
-import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, isPrimaryWindowSender, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { shouldWarnMissingDebugPort } from './startup-debug-port.ts';
 import { EXIT_NO_INSTANCE, EXIT_SIGNALLED, hasQuitSignal } from './restart-signal.ts';
+import { BACKGROUND_LAUNCH_FLAG, backgroundRelaunchArgs, hideBackgroundWindows, isBackgroundLaunch } from './background-launch.ts';
 // このファイルから切り出した IPC ハンドラのモジュール（機械的な移動＝ロジックは変えていない）。
 // それぞれ register(ctx) を公開する。ctx は下のコア関数の後で組み立て、トップレベルの登録箇所で
 // 渡す（whenReady の前、registerExtractedIpc を参照）。
@@ -117,7 +124,10 @@ protocol.registerSchemesAsPrivileged([
 // 取込キューを流し込む。マーカーを持つレコードは通常まだそこに残っているため。例外は投げない。
 // 完了できなかった置き換えはマーカーを立てたまま残り、次のパスで再試行される。呼び出し元を
 // 失敗させるよりそちらが確実に良い。
-async function sweepReplacements() {
+function sweepReplacements() {
+  return runLibraryBackgroundTask(sweepReplacementsNow);
+}
+async function sweepReplacementsNow() {
   const end = appActivity.begin();
   try {
     const folder = getSaveFolder();
@@ -141,12 +151,23 @@ async function sweepReplacements() {
 
 let inboxWatcher: FSWatcher | null = null;
 let inboxWatchDebounce: any = null;
+// ライブラリ移動中の「DB が閉じている」は空ライブラリではない。レンダラーが一時的な
+// 読み取り不能を全件ゼロのスナップショットとして採用しないため、明示的に区別する。
+let libraryReadsPaused = false;
+let libraryRelocationOwner: number | null = null;
+let libraryRelocationGeneration = 0;
+let ownerDbAccess = false;
+async function waitForLibraryIpcIdle() {
+  // 開始済み IPC が最後に背景作業を予約することがある。IPC を先に待ってから、その作業も待つ。
+  await new Promise<void>((resolve) => libraryIpcActivity.whenIdle(resolve));
+  await waitForLibraryBackgroundIdle();
+}
 // fs.watch ではなく chokidar（#11）。プラットフォーム差の正規化と、rename 検出の筋が1本に
 // まとまる。プラットフォーム固有の fs.watch の癖を自前で追い回さずに済む。このディレクトリに
 // 入るのは取込キューへ到着したファイルだけなので depth: 0（このディレクトリ直下のエントリだけ、
 // 再帰しない）で足り、ignoreInitial は「監視を始めた時点で既にあったものには発火しない」という
 // fs.watch の挙動に合う。
-function watchInboxFolder() {
+async function watchInboxFolder(): Promise<void> {
   if (inboxWatcher) {
     const closing = inboxWatcher;
     void closing.close().catch(() => {
@@ -168,8 +189,9 @@ function watchInboxFolder() {
   }
   try {
     ensureInboxDirs(folder);
-    inboxWatcher = chokidar.watch(inboxNewDir(folder), { depth: 0, ignoreInitial: true });
-    inboxWatcher.on('all', () => {
+    const watcher = chokidar.watch(inboxNewDir(folder), { depth: 0, ignoreInitial: true });
+    inboxWatcher = watcher;
+    watcher.on('all', () => {
       clearTimeout(inboxWatchDebounce);
       inboxWatchDebounce = setTimeout(() => {
         // 掃き寄せはイベントより前に走らせる。レンダラーの再取得の時点で置き換えが片付いて
@@ -182,6 +204,10 @@ function watchInboxFolder() {
         });
       }, 400);
     });
+    // ignoreInitial の初期走査が終わる前に届いたファイルも「既存」とされ得る。呼び出し元が
+    // ready 後に最終 drain できるよう、監視が確立するまで待てる契約にする。error でも待ち続けず、
+    // 最終 drain 自体は実行する。
+    await waitForWatcherReady(watcher);
   } catch (err) {
     console.error('Failed to watch inbox folder:', err);
   }
@@ -263,6 +289,10 @@ function closeDb() {
   }
   dbHandle = null;
   screenshotTrashRetired = false;
+  savedIndexPrimed = false;
+  if (savedIndexTimer) clearTimeout(savedIndexTimer);
+  savedIndexTimer = null;
+  savedIndexPending = null;
 }
 // #176: データベースは保存先フォルダの中に入ったので、ディスク上に無いフォルダ（アプリの外で
 // 移動・改名・アンマウントされた、#37）はデータベースにも届かないことを意味する。#176 より前は
@@ -272,6 +302,7 @@ function closeDb() {
 // 拒否としてレンダラーへ届くより、何が起きたかを名指しするメッセージを付けてここできれいに断る
 // 方が確実に良い。まさにこの状態のために、LibraryMissingState.tsx が本文の列を丸ごと差し替える。
 function ensureDb() {
+  if (libraryReadsPaused && !ownerDbAccess && !isAdmittedLibraryIpc()) throw new Error('library relocation is in progress');
   if (dbHandle) return dbHandle;
   // 後片付けがすでにライブラリを閉じている（before-quit、このファイルの末尾）。起動時に仕掛けた
   // タイマーは終了処理の最中も発火し続ける。そのうちの1つのために新しい接続を開けば、もう誰も
@@ -301,6 +332,12 @@ function ensureDb() {
   } catch (err) {
     log.warn('history prune failed:', err);
   }
+  const repairDb = dbHandle.sqlite;
+  const repairFolder = getSaveFolder();
+  if (repairFolder)
+    setImmediate(() => {
+      void repairLegacyItemReferences(repairDb, repairFolder, () => dbHandle?.sqlite === repairDb && !quitting && !libraryReadsPaused).catch((error) => log.warn('legacy item reference repair failed:', error));
+    });
   return dbHandle;
 }
 
@@ -334,11 +371,15 @@ let onPostsSaved: ((count: number) => void) | null = null;
 async function writeSavedIndexNow(handle: { sqlite: any }) {
   try {
     // ゴミ箱の側（#158）は DB ではなくファイルシステムから来る。ゴミ箱へ入れた投稿には
-    // posts の行がそもそも無い。listTrashRecords はゴミ箱の表示自体が読むのに使うものなので、
-    // 仕込まれたレコードもここで正規化される（#324）。読めないゴミ箱フォルダは、書き込み全体を
+    // posts の行がそもそも無い。索引専用の読み出しは必要な3欄だけを、ファイル単位と
+    // 走査全体の上限の内側で読む。完全 ZIP が置いた巨大なレコードを、起動時に表示用の
+    // listTrashRecords で丸ごと正規化してはならない。読めないゴミ箱フォルダは、書き込み全体を
     // 失敗させるのではなく通知を1件も出さない＝保存済みの側の方が重要。
-    const trashDir = getTrashDir();
-    const trash = trashDir ? (await listTrashRecords(trashDir)).map((r) => ({ captureId: r.captureId, url: r.url, trashedAt: r.trashedAt })) : [];
+    const folder = path.dirname(path.resolve(handle.sqlite.name));
+    const trash = await listTrashIndexRecords(path.join(folder, TRASH_SUBDIR));
+    // 読み出しを待つ間にライブラリが切り替わった場合、旧接続の索引を
+    // 新ライブラリの共有スナップショットへ書かない。
+    if (dbHandle?.sqlite !== handle.sqlite) return;
     const data = buildSavedIndex(handle.sqlite, trash);
     const dir = configDir();
     fs.mkdirSync(dir, { recursive: true });
@@ -358,6 +399,7 @@ function scheduleSavedIndexWrite(handle: { sqlite: any }) {
   clearTimeout(savedIndexTimer);
   savedIndexPending = handle;
   savedIndexTimer = setTimeout(() => {
+    if (libraryReadsPaused) return;
     savedIndexPending = null;
     savedIndexInFlight = writeSavedIndexNow(handle).finally(() => {
       savedIndexInFlight = null;
@@ -421,6 +463,7 @@ let compactionTimer: any = null;
 function scheduleInboxCompaction(folder: string, sqlite: any) {
   clearTimeout(compactionTimer);
   compactionTimer = setTimeout(() => {
+    if (libraryReadsPaused || dbHandle?.sqlite !== sqlite) return;
     try {
       const report = compactInbox(folder, sqlite);
       if (report.compacted) log.info(`inbox compacted ${report.eventCount} event(s) into segment ${report.segmentId}`);
@@ -447,7 +490,7 @@ function ensurePostsSynced() {
   // まったく同じに扱えば、どの呼び出し元も既に対応できている。データベースを閉じ終えた終了処理も
   // 同じ（ensureDb を参照）。以前は同じ一発もののタイマーが閉じたハンドルへ届き、終了のたびに
   // "inbox drain failed: TypeError: The database connection is not open" の2行を出していた。
-  if (restoringMissingLibrary || quitting) return null;
+  if (restoringMissingLibrary || quitting || (libraryReadsPaused && !ownerDbAccess && !isAdmittedLibraryIpc())) return null;
   const handle = ensureDb();
   // このパスが流し込むものを見つけたかどうかに関係なくスナップショットを用意する＝
   // buildSavedIndex は索引の効いた SELECT 2回で、DB の最終書き込みに対してファイルの鮮度を
@@ -501,6 +544,7 @@ interface DeltaBaseline {
 const _deltaBySender = new Map<number, DeltaBaseline>();
 async function listPostsDelta(haveBaseline: boolean, senderId: number) {
   const folder = getSaveFolder();
+  if (libraryReadsPaused) return { saveFolder: folder, full: false, paused: true, profiles: [] };
   if (!folder) {
     _deltaBySender.delete(senderId);
     return { saveFolder: null, full: true, posts: [], profiles: [] };
@@ -675,7 +719,10 @@ function getTrashDir() {
   return folder ? path.join(folder, TRASH_SUBDIR) : null;
 }
 // ゴミ箱の中で TRASH_DAYS より古いものを削除する。起動時に呼ぶ。
-async function purgeOldTrash() {
+function purgeOldTrash() {
+  return runLibraryBackgroundTask(purgeOldTrashNow);
+}
+async function purgeOldTrashNow() {
   const end = appActivity.begin();
   try {
     const trashDir = getTrashDir();
@@ -735,7 +782,19 @@ async function purgeOldTrash() {
 // --- エクスポート通知とローカル復旧 ---
 // 通知、DB 世代、#301 の整合性検査は ./lib-library-safety.ts にまとめてある。
 // ここで生成するのは、世代の作成と孤児の検査が上のレコードのパイプラインを必要とするため。
-const { getExportReminder, setExportReminderEnabled, setExportReminderThreshold, markExported, armRecoverySchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, notePostsSaved, isBusy: isLibrarySafetyBusy } = createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast });
+const {
+  getExportReminder,
+  setExportReminderEnabled,
+  setExportReminderThreshold,
+  beginCompleteExport,
+  markExported,
+  armRecoverySchedule,
+  runStartupIntegrityCheck,
+  runOrphanRecovery,
+  noteLibraryMutation,
+  notePostsSaved,
+  isBusy: isLibrarySafetyBusy,
+} = createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast });
 onLibraryMutation = noteLibraryMutation;
 onPostsSaved = notePostsSaved;
 
@@ -752,6 +811,7 @@ async function waitForLibrarySafetyIdle(maxMs = 15000) {
   while (isLibrarySafetyBusy() && Date.now() - start < maxMs) {
     await new Promise((r) => setTimeout(r, 150));
   }
+  if (isLibrarySafetyBusy()) throw new Error('library safety operation did not finish');
 }
 async function restoreMissingLibrary(dest: string): Promise<{ ok: true; saveFolder: string } | { ok: false; error: string }> {
   const v = validateSaveFolder(dest);
@@ -759,83 +819,141 @@ async function restoreMissingLibrary(dest: string): Promise<{ ok: true; saveFold
   const classification = classifyLibraryFolder(dest);
   if (classification === 'reject') return { ok: false, error: 'not-a-library' };
   if (restoringMissingLibrary) return { ok: false, error: 'busy' };
-  restoringMissingLibrary = true;
-  const from = getSaveFolder();
+  const owner = await pauseLibraryRelocation();
+  if (owner === null) return { ok: false, error: 'busy' };
+  return runAdmittedLibraryOperation(async () => {
+    restoringMissingLibrary = true;
+    const from = getSaveFolder();
+    try {
+      // 現在のライブラリへ書き込むものを、閉じる前に全部止める。取込キューの監視はきっぱり閉じる
+      // （新しいライブラリが開くまで仕掛け直さない）。復元ポイントの書き込みは中断せず
+      // 待つ＝世代の書き込みの途中で closeDb() を呼べば、スナップショットを
+      // 取っている当のファイルを引き裂くことになる。
+      if (inboxWatcher) {
+        const closing = inboxWatcher;
+        inboxWatcher = null;
+        await closing.close().catch(() => {});
+      }
+      await waitForLibrarySafetyIdle();
+
+      closeDb();
+      savedIndexPrimed = false; // 次のライブラリは自分の saved-index のスナップショットを自分で用意する
+
+      const cfg = readConfig();
+      cfg.saveFolder = dest;
+      writeConfig(cfg);
+
+      try {
+        // 分類が示していたことは、ensureDb() が既に全部やっている。hologram.db をそのまま開く
+        // （'has-db'）、ファイルが無ければ開く前に最新の世代のスナップショットを復元する
+        // （'evidence-no-db'＝既にある回収の経路で、新しい仕掛けは無い）、新しく作る（'empty'）。
+        ensureDb();
+      } catch (err: any) {
+        // ここまでに、ただ指し直して戻すだけでは取り消せないような永続的なことは何も起きて
+        // いない。ポインタを戻し、離れたライブラリを開き直す。
+        log.error(`restoreMissingLibrary: could not open the database at ${dest} — rolling back to ${from}:`, err);
+        const back = readConfig();
+        back.saveFolder = from;
+        writeConfig(back);
+        try {
+          ensureDb();
+        } catch {
+          /* dbHandle は null のまま＝LibraryMissingState と空状態の UI が引き継ぐ */
+        }
+        restoringMissingLibrary = false;
+        return { ok: false, error: 'open-failed' };
+      }
+      // ここから先、新しいデータベースは開いていて安定している＝外側の finally ではなく今すぐ
+      // 番人を下ろす。下の ensurePostsSynced()（と、起動時のタイマーが同時に動かすもの）が、この
+      // 関数全体が返るまで待たされず、すぐ新しいライブラリを見られるように。
+      restoringMissingLibrary = false;
+
+      // 上で止めたものを全部、新しいライブラリに対して繋ぎ直す。
+      _deltaBySender.clear();
+      // 前のライブラリのハンドルをまだ抱えているデバウンスは、吐き出さずに捨てる。下の書き込みが
+      // それに取って代わるし、後から着地させると＝自分のタイマーで、あるいは終了時の吐き出しで＝
+      // 利用者がたった今離れたライブラリを、拡張機能が読む索引へ戻してしまう。
+      clearTimeout(savedIndexTimer);
+      savedIndexPending = null;
+      const synced = ensurePostsSynced();
+      // デバウンスされた scheduleSavedIndexWrite ではなく即時＝writeSavedIndexNow の
+      // コメントを参照。
+      if (synced) await writeSavedIndexNow(synced);
+
+      // すべてのウィンドウを新しいライブラリに対して読み込み直す。ただし、この呼び出し自身の返答が
+      // 着地する余地を作った後で、その場ではない。ここで読み込み直すと呼び出し元のフレームが先に
+      // 壊れ、復旧を await していたレンダラーは値も拒否も受け取れなかった（単に決着
+      // しなかった）。完了通知も一緒に片付けられ、呼び出し元が次にやることは
+      // 飛行中に死んだ。#233 のロールバックがまさに同じ理由で既にこの遅延で読み込み直している＝
+      // 定数と残りの論拠は lib-window.ts が持つ。夜間のスイートで見つかった。遅いランナーで
+      // ハーネスの切り替え後の IPC 呼び出しが競争に負け、60秒のスモークの受け皿まで止まっていた
+      // （Refs #917）。
+      setTimeout(() => {
+        for (const w of getWindows()) {
+          if (!w.isDestroyed()) w.webContents.reload();
+        }
+      }, RELOAD_AFTER_LIBRARY_SWAP_MS);
+
+      return { ok: true, saveFolder: dest };
+    } finally {
+      restoringMissingLibrary = false;
+      await resumeAfterLibraryRelocation(owner);
+    }
+  });
+}
+
+async function pauseLibraryRelocation(reservedOwner?: number): Promise<number | null> {
+  if (libraryRelocationOwner !== null && libraryRelocationOwner !== reservedOwner) return null;
+  if (reservedOwner !== undefined && libraryRelocationOwner !== reservedOwner) return null;
+  const owner = reservedOwner ?? ++libraryRelocationGeneration;
+  libraryRelocationOwner = owner;
+  libraryReadsPaused = true;
+  closeLibraryIpcAdmission();
   try {
-    // 現在のライブラリへ書き込むものを、閉じる前に全部止める。取込キューの監視はきっぱり閉じる
-    // （新しいライブラリが開くまで仕掛け直さない）。復元ポイントの書き込みは中断せず
-    // 待つ＝世代の書き込みの途中で closeDb() を呼べば、スナップショットを
-    // 取っている当のファイルを引き裂くことになる。
+    clearTimeout(inboxWatchDebounce);
+    inboxWatchDebounce = null;
+    clearTimeout(compactionTimer);
+    clearTimeout(savedIndexTimer);
     if (inboxWatcher) {
       const closing = inboxWatcher;
       inboxWatcher = null;
-      await closing.close().catch(() => {});
+      await closing.close();
     }
+    await waitForLibraryIpcIdle();
+    clearTimeout(compactionTimer);
+    await flushSavedIndexWrite();
     await waitForLibrarySafetyIdle();
+    return owner;
+  } catch (error) {
+    if (libraryRelocationOwner === owner) await resumeAfterLibraryRelocation(owner);
+    throw error;
+  }
+}
 
-    closeDb();
-    savedIndexPrimed = false; // 次のライブラリは自分の saved-index のスナップショットを自分で用意する
-
-    const cfg = readConfig();
-    cfg.saveFolder = dest;
-    writeConfig(cfg);
-
-    try {
-      // 分類が示していたことは、ensureDb() が既に全部やっている。hologram.db をそのまま開く
-      // （'has-db'）、ファイルが無ければ開く前に最新の世代のスナップショットを復元する
-      // （'evidence-no-db'＝既にある回収の経路で、新しい仕掛けは無い）、新しく作る（'empty'）。
-      ensureDb();
-    } catch (err: any) {
-      // ここまでに、ただ指し直して戻すだけでは取り消せないような永続的なことは何も起きて
-      // いない。ポインタを戻し、離れたライブラリを開き直す。
-      log.error(`restoreMissingLibrary: could not open the database at ${dest} — rolling back to ${from}:`, err);
-      const back = readConfig();
-      back.saveFolder = from;
-      writeConfig(back);
+// relocation の正常完了と pause 途中失敗が共有する再開処理。watcher の ready 後に最終 drain と
+// replacement を行ってから admission を開くため、ignoreInitial の初期走査にも監視の空白を作らない。
+async function resumeAfterLibraryRelocation(owner: number) {
+  if (libraryRelocationOwner !== owner) return;
+  try {
+    await establishWatcherAndFinalDrain(watchInboxFolder, async () => {
+      ownerDbAccess = true;
       try {
-        ensureDb();
-      } catch {
-        /* dbHandle は null のまま＝LibraryMissingState と空状態の UI が引き継ぐ */
+        ensurePostsSynced();
+        await runAdmittedLibraryOperation(sweepReplacements);
+      } finally {
+        ownerDbAccess = false;
       }
-      restoringMissingLibrary = false;
-      watchInboxFolder();
-      return { ok: false, error: 'open-failed' };
-    }
-    // ここから先、新しいデータベースは開いていて安定している＝外側の finally ではなく今すぐ
-    // 番人を下ろす。下の ensurePostsSynced()（と、起動時のタイマーが同時に動かすもの）が、この
-    // 関数全体が返るまで待たされず、すぐ新しいライブラリを見られるように。
-    restoringMissingLibrary = false;
-
-    // 上で止めたものを全部、新しいライブラリに対して繋ぎ直す。
-    watchInboxFolder();
-    _deltaBySender.clear();
-    // 前のライブラリのハンドルをまだ抱えているデバウンスは、吐き出さずに捨てる。下の書き込みが
-    // それに取って代わるし、後から着地させると＝自分のタイマーで、あるいは終了時の吐き出しで＝
-    // 利用者がたった今離れたライブラリを、拡張機能が読む索引へ戻してしまう。
-    clearTimeout(savedIndexTimer);
-    savedIndexPending = null;
-    const synced = ensurePostsSynced();
-    // デバウンスされた scheduleSavedIndexWrite ではなく即時＝writeSavedIndexNow の
-    // コメントを参照。
-    if (synced) await writeSavedIndexNow(synced);
-
-    // すべてのウィンドウを新しいライブラリに対して読み込み直す。ただし、この呼び出し自身の返答が
-    // 着地する余地を作った後で、その場ではない。ここで読み込み直すと呼び出し元のフレームが先に
-    // 壊れ、復旧を await していたレンダラーは値も拒否も受け取れなかった（単に決着
-    // しなかった）。完了通知も一緒に片付けられ、呼び出し元が次にやることは
-    // 飛行中に死んだ。#233 のロールバックがまさに同じ理由で既にこの遅延で読み込み直している＝
-    // 定数と残りの論拠は lib-window.ts が持つ。夜間のスイートで見つかった。遅いランナーで
-    // ハーネスの切り替え後の IPC 呼び出しが競争に負け、60秒のスモークの受け皿まで止まっていた
-    // （Refs #917）。
-    setTimeout(() => {
-      for (const w of getWindows()) {
-        if (!w.isDestroyed()) w.webContents.reload();
-      }
-    }, RELOAD_AFTER_LIBRARY_SWAP_MS);
-
-    return { ok: true, saveFolder: dest };
+    });
+  } catch (err) {
+    log.error('failed final inbox drain after relocation:', err);
   } finally {
-    restoringMissingLibrary = false;
+    _deltaBySender.clear();
+    libraryReadsPaused = false;
+    libraryRelocationOwner = null;
+    ownerDbAccess = false;
+    openLibraryIpcAdmission();
+    broadcast('posts-changed', null);
+    notifyOrganizationAfterRelocation(broadcast);
   }
 }
 
@@ -877,6 +995,7 @@ function registerExtractedIpc() {
     getExportReminder,
     setExportReminderEnabled,
     setExportReminderThreshold,
+    beginCompleteExport,
     markExported,
     notePostsSaved,
     armRecoverySchedule,
@@ -896,6 +1015,87 @@ function registerExtractedIpc() {
       ensureDb();
     },
     watchInboxFolder,
+    pauseLibraryRelocation,
+    finishLibraryRelocation: async (owner) => {
+      if (libraryRelocationOwner !== owner) return;
+      // 成功なら設定は移動先、失敗なら元の場所を指す。ignoreInitial の watcher を張る前に
+      // 現在側の inbox を明示的に drain し、停止中に到着した保存を取りこぼさない。
+      try {
+        ownerDbAccess = true;
+        let replacements: Promise<void>;
+        try {
+          ensurePostsSynced();
+          replacements = runAdmittedLibraryOperation(sweepReplacements);
+        } finally {
+          ownerDbAccess = false;
+        }
+        await replacements;
+      } catch (err) {
+        log.error('failed to reinitialize library after relocation:', err);
+      } finally {
+        await resumeAfterLibraryRelocation(owner);
+      }
+    },
+    importCompleteArchive: (zipPath, folder) =>
+      runCompleteArchiveImport(zipPath, folder, {
+        getSaveFolder,
+        getLibraryIdentity: (owner) => {
+          if (owner === undefined) return ensureLibraryId(ensureDb().sqlite);
+          if (libraryRelocationOwner !== owner) throw new Error('stale import owner');
+          ownerDbAccess = true;
+          try {
+            return ensureLibraryId(ensureDb().sqlite);
+          } finally {
+            ownerDbAccess = false;
+          }
+        },
+        pause: pauseLibraryRelocation,
+        closeDb: (owner) => {
+          if (libraryRelocationOwner !== owner) throw new Error('stale import owner');
+          ownerDbAccess = true;
+          try {
+            ensurePostsSynced();
+          } finally {
+            ownerDbAccess = false;
+          }
+          closeDb();
+        },
+        finish: resumeAfterLibraryRelocation,
+      }),
+    getDbForCompleteExport: (owner) => {
+      if (libraryRelocationOwner !== owner) throw new Error('stale export owner');
+      ownerDbAccess = true;
+      try {
+        const handle = ensurePostsSynced();
+        if (!handle) throw new Error('no-folder');
+        return handle;
+      } finally {
+        ownerDbAccess = false;
+      }
+    },
+    reserveCompleteExport: () => {
+      if (libraryRelocationOwner !== null) return null;
+      return (libraryRelocationOwner = ++libraryRelocationGeneration);
+    },
+    pauseCompleteExport: (owner) => pauseLibraryRelocation(owner),
+    finishCompleteExport: async (owner) => {
+      if (libraryRelocationOwner !== owner) return;
+      if (libraryReadsPaused) await resumeAfterLibraryRelocation(owner);
+      else libraryRelocationOwner = null;
+    },
+    closeDbForLibraryRelocation: (owner) => {
+      if (libraryRelocationOwner !== owner) throw new Error('stale library relocation owner');
+      closeDb();
+    },
+    openDbForLibraryRelocation: (owner) => {
+      if (libraryRelocationOwner !== owner) throw new Error('stale library relocation owner');
+      ownerDbAccess = true;
+      try {
+        ensureDb();
+      } finally {
+        ownerDbAccess = false;
+      }
+    },
     getWin,
     isConfigCorrupt,
     resetDelta: () => {
@@ -903,10 +1103,10 @@ function registerExtractedIpc() {
     },
     send: broadcast,
     sendExcept: sendToOtherWins,
-    // #32 St1: tabs.json の番人（ipc-config.ts の get-tabs/set-tabs）＝主ウィンドウの送り手
-    // だけが読み書きできる。だからこれは（主ウィンドウにとっては）何もしない確認であって、
-    // 将来の呼び出し元が忘れ得る呼び出し箇所ごとの分岐ではない。
-    isPrimarySender: (webContentsId) => getWin()?.webContents.id === webContentsId,
+    // #32 St1: tabs.json の番人（ipc-config.ts の get-tabs/set-tabs）＝起動時の主ウィンドウの
+    // 送り手だけが読み書きできる。主窓の閉鎖後に配送先となる副窓へ、この権限まで移しては
+    // ならない。将来の呼び出し元が忘れ得る呼び出し箇所ごとの分岐ではなく、ここで一度判定する。
+    isPrimarySender: isPrimaryWindowSender,
     openNewWindow: () => {
       createWindow(true, { secondary: true });
     },
@@ -957,7 +1157,7 @@ const hasActivateExistingSignal = (argv: readonly string[]) => argv.includes(ACT
 // ロックを取り損ね、その argv がロックの保持者へ届き、保持者が自分で終了する。それがマシンの
 // electron.exe の一覧からプロセスを選ぶやり方に取って代わった理由は restart-signal.ts にある。
 const QUIT_SIGNAL = hasQuitSignal(process.argv);
-const gotSingleInstanceLock = SMOKE || app.requestSingleInstanceLock();
+const gotSingleInstanceLock = SMOKE || app.requestSingleInstanceLock({ backgroundLaunch: isBackgroundLaunch(process.argv, process.env) });
 if (!gotSingleInstanceLock) {
   // requestSingleInstanceLock の中で保持者へこちらの argv を渡してあるので、もうやることは
   // 無い。app.quit ではなく app.exit。このプロセスは吐き出すべき状態を持たないし、スクリプトは
@@ -971,7 +1171,7 @@ if (!gotSingleInstanceLock) {
 } else {
   receivePostLink(process.argv, null);
   if (!SMOKE) {
-    app.on('second-instance', (_event, argv) => {
+    app.on('second-instance', (_event, argv, _cwd, additionalData) => {
       // restart-app.ps1 の止める側。app.exit ではなく app.quit。before-quit の後片付け
       // （saved-index の吐き出し、ウィンドウの位置と大きさ、db を閉じる）こそ、古い
       // CloseMainWindow() の呼び出しが守っていたもの。
@@ -979,6 +1179,8 @@ if (!gotSingleInstanceLock) {
         appActivity.whenIdle(() => app.quit());
         return;
       }
+      // 検証の接続要求では、既存ウィンドウの表示状態とフォーカスを変えない。
+      if (argv.includes(BACKGROUND_LAUNCH_FLAG) || (typeof additionalData === 'object' && additionalData !== null && 'backgroundLaunch' in additionalData && additionalData.backgroundLaunch === true)) return;
       // Command Palette からの起動は、既に開いているライブラリへ新しいウィンドウを
       // 足すのではなく、同じウィンドウを復元して前面へ出す。
       if (hasActivateExistingSignal(argv)) {
@@ -1006,7 +1208,7 @@ if (!gotSingleInstanceLock) {
         }
         return;
       }
-      createWindow(true, { secondary: true });
+      runWhenLibraryAdmissionOpen(() => createWindow(true, { secondary: true }));
     });
   }
 
@@ -1019,7 +1221,7 @@ if (!gotSingleInstanceLock) {
         app.getAppPath(),
         () => {
           log.info('App deployment received; restarting after active operations');
-          app.relaunch();
+          app.relaunch({ args: backgroundRelaunchArgs(process.argv.slice(1)) });
           app.quit();
         },
         (error) => log.warn('App deployment watcher:', error),
@@ -1059,6 +1261,8 @@ if (!gotSingleInstanceLock) {
     } catch {
       /* 無視する */
     }
+    // 強制終了した取り込みの所有journalだけを回収する。active actorはOS leaseで保持する。
+    void recoverCompleteArchiveImports().catch((error) => log.warn('Archive import recovery failed:', error));
     // 開発サーバーとサンドボックスの実行は保存しないので、host の登録を飛ばす＝HKCU への
     // 書き込みも、共有の設定ディレクトリへの native-host のコピーも無い。
     if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) {
@@ -1075,7 +1279,7 @@ if (!gotSingleInstanceLock) {
     // Playwright のフローは CDP から操作するので、利用者のデスクトップに出す必要がない。
     // hidden でも paintWhenInitiallyHidden とバックグラウンド抑止の起動引数により、描画と
     // レイアウトの検証は続く。
-    const startE2eHidden = !SMOKE && process.env.HOLOGRAM_E2E_HIDDEN === '1';
+    const startE2eHidden = !SMOKE && hideBackgroundWindows(process.argv, process.env);
     // 検証のための起動（サンドボックスの2つ目のインスタンス、セッションから駆動する再起動）は、
     // 画面で利用者がやっていることを邪魔してはいけない。ここで最小化は選べない。CSS の遷移と
     // 実際のレイアウトを観測できるよう、ウィンドウは合成を続けなければならず、検証の実行が
@@ -1189,7 +1393,7 @@ if (!gotSingleInstanceLock) {
     // 利用者に代わって起動されたときは最小化で始める。フォーカスを奪わず、タスクバーのボタンも
     // 光らせない。非アクティブで見せ（フォーカス無し → FlashWindowEx 無し）、最小化し、保留中の
     // 注意喚起の点滅を明示的に消す。（通常の起動はフォーカスの当たったウィンドウを開く。）
-    if (startMin && getWin()) {
+    if (startMin && !startE2eHidden && getWin()) {
       (getWin() as BrowserWindow).once('ready-to-show', () => {
         const w = getWin() as BrowserWindow;
         w.showInactive();

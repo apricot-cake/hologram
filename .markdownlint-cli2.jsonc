@@ -1,0 +1,9 @@
+{
+  "gitignore": true,
+  "globs": ["**/*.md"],
+  "ignores": ["app/third-party-licenses/**"],
+  "config": {
+    "default": true,
+    "MD013": false
+  }
+}

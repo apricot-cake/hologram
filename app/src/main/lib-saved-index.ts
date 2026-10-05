@@ -14,6 +14,7 @@
 // lib-db-query.ts と同様に素の node で単体テストできる。
 
 import type Database from 'better-sqlite3';
+import path from 'node:path';
 import type { SavedEntry } from '../../../native-host/protocol.mts';
 import { postKeyOf } from '../../../native-host/post-key.mts';
 
@@ -23,9 +24,10 @@ const SAVED_INDEX_FORMAT = 'hologram-bridge-saved-index';
 // 追加。v4（#158）は `entries` の隣に `trashed` の map を追加。ブリッジは
 // 今も v1 のエントリ（「保存済み、画像は不明」として）と v2 のエントリ
 // （「保存済み画像は既知、owner は不明」として）を読み、`trashed` の map が
-// 無いファイルを「ゴミ箱には何も無い」として扱うので、まだファイルを書き直して
-// いないアプリでも答え続けられる。
-const SAVED_INDEX_VERSION = 6;
+// 無いファイルを「ゴミ箱には何も無い」として扱う。
+// v7 は DB の所在から得た saveFolder を追加する。帰属を持たない旧索引は
+// 別ライブラリと区別できないため、アプリで再生成するまで採用しない。
+const SAVED_INDEX_VERSION = 7;
 const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 
 // media は位置で意味を持つ: 配列の添字がそのままメディア行の seq であり、
@@ -73,6 +75,7 @@ interface SavedIndexFile {
   format: typeof SAVED_INDEX_FORMAT;
   version: typeof SAVED_INDEX_VERSION;
   generatedAt: string;
+  saveFolder: string;
   entries: Record<string, SavedIndexEntry>; // postKey -> エントリ
   trashed: Record<string, TrashedIndexEntry>; // postKey -> ゴミ箱のレコード（#158）
 }
@@ -88,6 +91,11 @@ interface SavedIndexFile {
 // 読むと、バッジは既に保存済みの画像を保存できると案内してしまう。
 function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput[] = [], now: () => string = () => new Date().toISOString()): SavedIndexFile {
   const entries: Record<string, SavedIndexEntry> = {};
+  // 同じ投稿を複数レコードから合流するとき、既出 URL を配列の線形走査で探すと、
+  // legacy インポートなどが大量の media 行を持ち込んだ場合に二乗時間になる。
+  // 出力の順序は entry.media に任せ、所属判定だけを Set で一定時間にする。
+  const mediaUrlsByKey = new Map<string, Set<string>>();
+  const individualMediaUrlsByKey = new Map<string, Set<string>>();
   // ライブラリが「何も」保持していない投稿は何も答えない（#492）——そうしないと
   // バッジは、permalink 自体が語ること以外何も持たないレコードについて利用者に
   // 「保存済み」と伝えてしまい、それ以降のすべての取り込みがその言葉を信じて
@@ -141,23 +149,43 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
         owners: Array.from(media, () => row.captureId),
         total: row.imageCount && row.imageCount > 0 ? row.imageCount : media.length || null,
       };
+      mediaUrlsByKey.set(key, new Set(media.filter((url): url is string => !!url)));
       continue;
     }
     entry.post ||= !row.saveIncomplete && row.saveScope === 'post' && media.length >= (row.imageCount || 0);
-    if (row.saveScope === 'media') entry.individualMedia = [...new Set([...entry.individualMedia, ...media.filter((url): url is string => !!url)])];
+    if (row.saveScope === 'media') {
+      let individualMediaUrls = individualMediaUrlsByKey.get(key);
+      if (!individualMediaUrls) {
+        // 先頭レコード内の重複は、後続の個別保存と合流するときだけ除く。
+        individualMediaUrls = new Set(entry.individualMedia);
+        entry.individualMedia = [...individualMediaUrls];
+        individualMediaUrlsByKey.set(key, individualMediaUrls);
+      }
+      for (const url of media) {
+        if (!url || individualMediaUrls.has(url)) continue;
+        individualMediaUrls.add(url);
+        entry.individualMedia.push(url);
+      }
+    }
     entry.total = Math.max(entry.total || 0, row.imageCount || 0, media.length) || null;
     // URL の無い画像は、そのキーを最初に主張した「1件目の」レコードからだけ
     // 保持する（bridge.mts の mergeSavedEntry も自身の2つの情報源について同じ
     // ことを言っている）: その位置は自分自身のレコードの中でだけ意味を持ち、
     // 他のどこでも意味を持たない。
+    let mediaUrls = mediaUrlsByKey.get(key);
+    if (!mediaUrls) {
+      mediaUrls = new Set(entry.media.filter((url): url is string => !!url));
+      mediaUrlsByKey.set(key, mediaUrls);
+    }
     for (const url of media) {
-      if (!url || entry.media.includes(url)) continue;
+      if (!url || mediaUrls.has(url)) continue;
+      mediaUrls.add(url);
       entry.media.push(url);
       entry.owners.push(row.captureId);
     }
     entry.total = Math.max(entry.total || 0, entry.media.length) || null;
   }
-  return { format: SAVED_INDEX_FORMAT, version: SAVED_INDEX_VERSION, generatedAt: now(), entries, trashed: buildTrashedMap(trash, entries) };
+  return { format: SAVED_INDEX_FORMAT, version: SAVED_INDEX_VERSION, generatedAt: now(), saveFolder: path.dirname(path.resolve(sqlite.name)), entries, trashed: buildTrashedMap(trash, entries) };
 }
 
 // 索引のうちゴミ箱を扱う半分（#158）。何がここに載るかは2つの規則で決まる:

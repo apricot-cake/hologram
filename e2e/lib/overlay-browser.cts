@@ -21,6 +21,10 @@ const FIXTURES = path.join(__dirname, '../../tests/fixtures/overlay');
 
 interface OverlayBrowser {
   browser: any;
+  extensionId: string;
+  overlaySnapshot(page: any): Promise<any>;
+  setStorage(values: Record<string, unknown>): Promise<void>;
+  getStorage(): Promise<Record<string, unknown>>;
   close(): Promise<void>;
 }
 
@@ -45,6 +49,22 @@ async function launchOverlayBrowser(options: { locale?: string } = {}): Promise<
   });
   return {
     browser: session.context,
+    extensionId: session.extensionId,
+    async overlaySnapshot(page: any) {
+      const tabUrl = page.url();
+      return session.serviceWorker.evaluate(async (url: string) => {
+        const api = (globalThis as any).chrome;
+        const [tab] = await api.tabs.query({ url });
+        if (!tab?.id) throw new Error(`overlay test tab not found: ${url}`);
+        return api.tabs.sendMessage(tab.id, { type: 'overlayTestSnapshot' });
+      }, tabUrl);
+    },
+    async setStorage(values: Record<string, unknown>) {
+      await session.serviceWorker.evaluate((next: Record<string, unknown>) => (globalThis as any).chrome.storage.local.set(next), values);
+    },
+    async getStorage() {
+      return session.serviceWorker.evaluate(() => (globalThis as any).chrome.storage.local.get(null));
+    },
     async close() {
       await session.close();
       fs.rmSync(extensionDir, { recursive: true, force: true });

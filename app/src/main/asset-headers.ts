@@ -23,9 +23,8 @@
 // XHR、frame、フォームの POST——はすべて `default-src 'none'` に落ちる。
 const ASSET_CSP = ["default-src 'none'", "img-src 'self' data: blob:", "media-src 'self' blob:", "style-src 'unsafe-inline'", 'font-src data:', "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'"].join('; ');
 
-// nosniff は宣言された content-type を固定する。mimeForFile は拡張子から型を
-// 導出するので、これが無いと、バイト列がファイル名と食い違うライブラリ
-// ファイルが、こちらが選んだ型とは違う（能動的な）型としてスニフされかねない。
+// nosniff は script/style の MIME 不一致を拒否する。画像の復号は防がないため、
+// lib-thumbnails が内容を分類し、共通画像境界を通してから配信する。
 export function assetSecurityHeaders(): Record<string, string> {
   return { 'content-security-policy': ASSET_CSP, 'x-content-type-options': 'nosniff' };
 }

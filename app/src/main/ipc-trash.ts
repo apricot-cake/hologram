@@ -1,3 +1,4 @@
+import { app } from 'electron';
 import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
 import { PostFlagsSchema } from '../shared/data-schemas.ts';
 
@@ -23,11 +24,12 @@ import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
-import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
+import { listTrashRecords, trashCapture, restoreTrashCapture } from './lib-trash-capture.ts';
+import { retainsFilesOnPostDelete } from './lib-db-write.ts';
 import { collectUnreferencedQuotes } from './lib-quoted-posts.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { OkResult, UpdateTagsResult } from './ipc-payloads.ts';
-import { itemDirectoryAbsolute, itemDirectoryRelative } from '../../../native-host/item-storage.mts';
+import { itemDirectoryRelative } from '../../../native-host/item-storage.mts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, getDbWriter, ensurePostsSynced, scheduleSavedIndexWrite, send } = ctx;
@@ -49,11 +51,24 @@ function register(ctx: IpcContext) {
     const handle = ensurePostsSynced();
     const flags = getDbWriter().getPostFlags(base);
     const rec: any = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
-    getDbWriter().deletePost(base);
+    if (!handle || !rec) return { ok: false };
     // ファイル側——#34 の置き換えの掃き寄せと共有し、両方が同じやり方で
     // キャプチャを退役させるようにする（lib-trash-capture.ts）。
-    const retainFiles = !!handle?.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ? AND isContext = 1').get(base);
-    await trashCapture({ folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags, retainFiles });
+    const retainFiles = retainsFilesOnPostDelete(handle.sqlite, base);
+    await trashCapture({
+      folder,
+      trashDir,
+      mediaExts: LIBRARY_MEDIA_EXTS,
+      captureId: base,
+      record: rec,
+      flags,
+      retainFiles,
+      commitDelete: () => {
+        // 移動中の整理操作や引用追加で、保存した復元情報が古くなっていないか確認する。
+        if (retainsFilesOnPostDelete(handle.sqlite, base) !== retainFiles || JSON.stringify(getDbWriter().getPostFlags(base)) !== JSON.stringify(flags)) throw new Error('Post changed during deletion');
+        if (!getDbWriter().deletePost(base)) throw new Error('Post deletion failed');
+      },
+    });
     // ブリッジは保存済み投稿の索引だけを読むので、索引が知らない削除は、
     // タイムラインのバッジを点灯させたままにし、重複保存の警告に今はゴミ箱に
     // あるキャプチャを名指しさせてしまう。この書き直しは、ゴミ箱の通知
@@ -77,9 +92,8 @@ function register(ctx: IpcContext) {
     const folder = getSaveFolder();
     if (!trashDir || !folder) return { ok: false };
     const base = baseOf(image);
-    let names: string[];
     try {
-      names = await fs.promises.readdir(trashDir);
+      await fs.promises.readdir(trashDir);
     } catch {
       return { ok: false };
     }
@@ -94,74 +108,30 @@ function register(ctx: IpcContext) {
       // レコードなしと契約違反を区別する。不正な復元ではファイルも移動しない。
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    const itemKey = path.basename(itemDirectoryRelative(base));
-    const trashItemDir = path.join(trashDir, itemKey);
-    const liveItemDir = itemDirectoryAbsolute(folder, base);
-    let movedItem = false;
-    if (fs.existsSync(trashItemDir)) {
-      try {
-        await fs.promises.mkdir(path.dirname(liveItemDir), { recursive: true });
-        // 同じ captureId の保存単位を上書きしない。通常は DB 行と一緒にこの場所も無い。
-        if (fs.existsSync(liveItemDir)) {
-          if (!ensurePostsSynced()?.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ? AND isContext = 1').get(base)) return { ok: false };
-          await fs.promises.cp(trashItemDir, liveItemDir, { recursive: true, force: false });
-        } else {
-          await fs.promises.rename(trashItemDir, liveItemDir);
-          movedItem = true;
-        }
-      } catch {
-        return { ok: false };
-      }
-    }
-    // メディアファイルはライブラリへ戻るが、レコードは戻らない。#302 以降、
-    // ライブラリフォルダが持つのはメディアだけで、投稿は posts 行を持つことで
-    // 存在する。
-    for (const f of names) {
-      if (f === `${base}.json`) continue;
-      if (f.startsWith(base + '.') || f.startsWith(base + '-')) {
-        try {
-          await fs.promises.rename(path.join(trashDir, f), path.join(folder, f));
-        } catch {}
-      }
-    }
-    if (restored) {
-      const handle = ensurePostsSynced();
-      if (handle) {
-        const sqlite = handle.sqlite;
-        const stmts = preparePostStmts(sqlite);
-        const resolveTagId = makeTagResolver(sqlite);
-        sqlite.exec('BEGIN');
-        try {
-          writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, { ...restored, tags: restored.tagClassification?.generalTags ?? restored.tags })));
-          getDbWriter().restorePostFlags(base, restored);
-          sqlite.exec('COMMIT');
-        } catch (err) {
-          sqlite.exec('ROLLBACK');
-          if (movedItem) {
-            try {
-              await fs.promises.rename(liveItemDir, trashItemDir);
-            } catch {
-              /* 次の整合性検査が回収できるよう、DBを復元したと偽らない */
-            }
-          }
-          throw err;
-        }
-        // userKind/tagReviewed/localViewCount は writePost の対象ではない——delete-post が
-        // ゴミ箱行き前の DB の値で刻んだレコードから、それらを再適用する。
-      }
-      try {
-        await fs.promises.unlink(trashJson);
-      } catch {
-        /* ベストエフォート: 残ったレコードは list-trash に幽霊を見せてしまう */
-      }
-      // グリッドはこのイベントの時だけ再取得する（index.ts の取込キューの
-      // ウォッチャー参照）——これが無いと、復元された投稿は次のアプリ起動まで
-      // 行方不明のままになる。
+    const handle = ensurePostsSynced();
+    if (restored && !handle) return { ok: false };
+    const existing = handle?.sqlite.prepare('SELECT isContext FROM posts WHERE captureId=?').get(base) as { isContext: number } | undefined;
+    if (existing && !existing.isContext) return { ok: false };
+    await restoreTrashCapture({
+      folder,
+      trashDir,
+      captureId: base,
+      record: restored,
+      allowExistingItem: !!existing?.isContext,
+      publisherExecutable: app.isPackaged ? path.join(process.resourcesPath, 'avif', 'avif-validator.exe') : path.join(app.getAppPath(), 'vendor', 'avif', 'avif-validator.exe'),
+      commitRestore: (record) => {
+        if (!record || !handle) return;
+        handle.sqlite.transaction(() => {
+          const current = handle.sqlite.prepare('SELECT isContext FROM posts WHERE captureId=?').get(base) as { isContext: number } | undefined;
+          if (current && !current.isContext) throw new Error('Post changed during restoration');
+          writePost(preparePostStmts(handle.sqlite), makeTagResolver(handle.sqlite), fillMediaDims(folder, fillCardDims(folder, { ...record, tags: record.tagClassification?.generalTags ?? record.tags })));
+          getDbWriter().restorePostFlags(base, record);
+        })();
+      },
+    });
+    if (restored && handle) {
       send('posts-changed', null);
-      // ライブラリに戻ったので、索引はもう一度「保存済み」と言わなければ
-      // ならない——そして、`.trash/` にいた間この投稿が持っていたゴミ箱の
-      // 通知を落とす（#158）。
-      if (handle) scheduleSavedIndexWrite(handle);
+      scheduleSavedIndexWrite(handle);
     }
     return { ok: true };
   });

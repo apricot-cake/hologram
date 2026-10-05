@@ -5,15 +5,19 @@ const root = __dirname;
 module.exports = {
   outDir: path.join(root, 'artifacts'),
   packagerConfig: {
-    asar: { unpack: '**/{.**,**}/**/*.node' },
+    asar: {
+      unpack: '*.node',
+      unpackDir: 'node_modules/{sharp,@img}',
+    },
     icon: path.join(root, 'assets', 'icon'),
-    extraResource: [path.join(root, '..', 'native-host'), path.join(root, 'vendor', 'meilisearch')],
+    extraResource: [path.join(root, '..', 'native-host'), path.join(root, 'vendor', 'meilisearch'), path.join(root, 'vendor', 'avif')],
   },
   rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
       config: {
+        name: 'Hologram',
         authors: 'apricot-cake',
         description: 'Hologram desktop viewer',
         exe: 'Hologram.exe',

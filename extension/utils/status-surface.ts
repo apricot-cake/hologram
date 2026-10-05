@@ -6,6 +6,7 @@
 import { ICONS, makeIcon, makeSpinner, type IconNode } from './icons.ts';
 import { motion, prefersReducedMotion } from './tokens.ts';
 import { ensureUiRoot } from './ui-root.ts';
+import { mountToastLayer } from './toast-layer.ts';
 
 export type SurfaceState = 'idle' | 'busy' | 'success' | 'partial' | 'error';
 
@@ -80,6 +81,7 @@ export class StatusSurface {
         parent.appendChild(stack);
       }
       stack.appendChild(this.el);
+      mountToastLayer(stack);
     } else parent.appendChild(this.el);
   }
 

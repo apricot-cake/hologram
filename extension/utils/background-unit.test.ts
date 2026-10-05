@@ -92,7 +92,9 @@ describe('buildRecord — サイドカーレコードの組み立て', () => {
 
 describe('generateCaptureId — #125 の外部参照キーになる想定なので形式を固定する', () => {
   test('`<epoch ms>-<4桁16進>` の形式', () => {
-    expect(generateCaptureId()).toMatch(/^\d+-[0-9a-f]{4}$/);
+    const id = generateCaptureId();
+    expect(id).toMatch(/^\d+-[0-9a-f]{8}$/);
+    expect(id.split('-')[1]).toHaveLength(8); // v4 Native Host の上限内
   });
 
   test('連続呼び出しでも重複しにくい（乱数部を含む）', () => {

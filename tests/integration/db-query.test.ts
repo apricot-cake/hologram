@@ -240,6 +240,21 @@ describe('postsFromDb: 形と並び', () => {
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2')!;
     expect(cap2.poll).toBeNull();
   });
+  test.each([{ choices: Array.from({ length: 101 }, () => ({ text: '選択肢', votes: 0 })) }, { choices: [{ text: 'a'.repeat(1001), votes: 0 }] }])('旧DBの過大な投票を画面へ渡さず、本文・メディア・DBの原文を保持する: %#', async ({ choices }) => {
+    const local = openDatabase(path.join(mkTempDir('hologram-poll-query-'), 'test.db'));
+    try {
+      writePost(preparePostStmts(local.sqlite), makeTagResolver(local.sqlite), { captureId: 'poll-old', text: '本文を保持', image: 'keep.jpg', media: [{ file: 'keep.jpg', url: 'https://example.com/keep.jpg' }] });
+      const raw = JSON.stringify({ choices, multiple: false, expiresAt: null });
+      local.sqlite.prepare('UPDATE posts SET poll = ? WHERE captureId = ?').run(raw, 'poll-old');
+      for (const posts of [await postsFromDb(local.sqlite), await postsByIds(local.sqlite, ['poll-old'])]) {
+        expect(posts).toHaveLength(1);
+        expect(posts[0]).toMatchObject({ text: '本文を保持', image: 'keep.jpg', poll: null, media: [{ file: 'keep.jpg' }] });
+      }
+      expect(local.sqlite.prepare('SELECT poll FROM posts WHERE captureId = ?').get('poll-old')).toEqual({ poll: raw });
+    } finally {
+      local.sqlite.close();
+    }
+  });
 
   // #181: quotedPost/poll と同じ「0個か1個」の JSON 列の往復（リンクを共有していない投稿
   // では空オブジェクトではなく null）。

@@ -21,10 +21,10 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterEach, describe, expect, test } from 'vitest';
-import { importCompleteZipToDb } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { postsFromDb } from '../../app/src/main/lib-db-query';
-import { listTrashRecords } from '../../app/src/main/lib-trash-capture';
+import { listTrashIndexRecords, listTrashRecords } from '../../app/src/main/lib-trash-capture';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -131,17 +131,16 @@ describe('DB 読み出し: posts.hashtags カラムが壊れている', () => {
 });
 
 describe('.trash/ の JSON（レンダラーがディスクの形をそのまま受け取る唯一の場所）', () => {
-  test('敵対的な完全形式 ZIP は .trash/*.json をそのままディスクへ置ける', async () => {
+  test('完全形式 ZIP の不正なゴミ箱レコードは書き込まずにスキップする', async () => {
     const sqlite = openDb();
     const destFolder = mkTempDir('hologram-hostile-dest-');
     const zipPath = await buildZip({
       'hologram-export.json': JSON.stringify({ version: 1 }),
       '.trash/planted.json': JSON.stringify({ captureId: { nope: 1 }, tags: 'solo', title: { deep: 1 }, trashedAt: 5 }),
     });
-    await importCompleteZipToDb(sqlite, zipPath, destFolder);
-    // ディスクに置かれること自体は意図してそうしている（ゴミ箱からの復元はファイルシステム
-    // 側で起きる）。だからこそ読む側で形を検査する必要がある。
-    expect(fs.existsSync(path.join(destFolder, '.trash', 'planted.json'))).toBe(true);
+    const result = await importCompleteZipToDb(sqlite, zipPath, destFolder);
+    expect(result.skipped).toBe(1);
+    expect(fs.readdirSync(path.join(destFolder, '.trash'))).toEqual([]);
   });
 
   test('listTrashRecords は不正な投稿を除外して正常な投稿を返す', async () => {
@@ -180,5 +179,23 @@ describe('.trash/ の JSON（レンダラーがディスクの形をそのまま
 
   test('ゴミ箱フォルダが無ければ空配列', async () => {
     expect(await listTrashRecords(path.join(mkTempDir('hologram-hostile-trash-'), 'missing'))).toEqual([]);
+  });
+});
+
+describe('.trash/ の保存済み索引読み出し', () => {
+  test('巨大なレコードを読まず、隣の通常レコードから必要な3欄だけを返す', async () => {
+    const trashDir = mkTempDir('hologram-hostile-trash-index-');
+    fs.writeFileSync(path.join(trashDir, 'huge.json'), JSON.stringify({ captureId: 'huge', url: 'https://x.com/a/status/1', raw: 'x'.repeat(1024 * 1024) }));
+    fs.writeFileSync(path.join(trashDir, 'normal.json'), JSON.stringify({ captureId: 'normal', url: 'https://x.com/b/status/2', trashedAt: '2026-02-02T00:00:00Z', media: [{ file: 'normal.jpg' }] }));
+
+    expect(await listTrashIndexRecords(trashDir)).toEqual([{ captureId: 'normal', url: 'https://x.com/b/status/2', trashedAt: '2026-02-02T00:00:00Z' }]);
+  });
+
+  test('ファイル名と captureId が違うレコードや必要欄の型が不正なレコードを除外する', async () => {
+    const trashDir = mkTempDir('hologram-hostile-trash-index-');
+    fs.writeFileSync(path.join(trashDir, 'mismatch.json'), JSON.stringify({ captureId: 'other', url: 'https://x.com/a/status/1' }));
+    fs.writeFileSync(path.join(trashDir, 'bad-url.json'), JSON.stringify({ captureId: 'bad-url', url: { hostile: true } }));
+
+    expect(await listTrashIndexRecords(trashDir)).toEqual([]);
   });
 });

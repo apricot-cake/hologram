@@ -7,6 +7,25 @@ vi.mock('./ui-root.ts', () => ({ ensureUiRoot: () => document.body }));
 vi.mock('./tokens.ts', () => ({ prefersReducedMotion: () => true, motion: {}, token: () => '' }));
 vi.mock('./user-gesture.ts', () => ({ userOnly: (handler: unknown) => handler }));
 let toasts: SaveToasts;
+
+test('詳細を開いた後の非同期通知はページの入力フォーカスを奪わない', () => {
+  toasts.notice('a', '', '保存できませんでした', vi.fn());
+  document.querySelector<HTMLButtonElement>('.toast-details-toggle')!.click();
+  const input = document.createElement('input');
+  document.body.append(input);
+  input.focus();
+  toasts.notice('b', '', '接続できません', vi.fn());
+  expect(document.activeElement).toBe(input);
+  expect(document.querySelector<HTMLElement>('[data-hologram-toast-details]')?.hidden).toBe(false);
+});
+
+test('通知内で操作中の投稿は更新後も同じ操作にフォーカスを保つ', () => {
+  toasts.notice('a', '', '保存できませんでした', vi.fn());
+  document.querySelector<HTMLButtonElement>('.toast-details-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('[data-toast-focus="retry:a"]')!.focus();
+  toasts.notice('b', '', '接続できません', vi.fn());
+  expect((document.activeElement as HTMLElement).dataset.toastFocus).toBe('retry:a');
+});
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.stubGlobal('navigator', { language: 'ja-JP' });
@@ -28,7 +47,7 @@ test('並行保存を一つに集約し、重複した完了を数えない', ()
   expect(document.body.textContent).toContain('保存中 1件');
   toasts.end('b', true);
   expect(document.body.textContent).toContain('2件保存しました');
-  vi.advanceTimersByTime(999);
+  vi.advanceTimersByTime(1999);
   expect(document.querySelector('[data-hologram-save-progress]')).not.toBeNull();
   vi.advanceTimersByTime(1);
   expect(document.querySelector('[data-hologram-save-progress]')).toBeNull();
@@ -70,6 +89,18 @@ test('詳細は通知を置き換え、閉じると通知全体が消える', ()
   expect(document.querySelector('[data-hologram-toast-details]')).toBeNull();
   expect(document.querySelector('[data-hologram-save-banner]')).toBeNull();
 });
+test('複数の失敗でリンクと再試行を各投稿の操作行にまとめる', () => {
+  for (const id of ['a', 'b']) toasts.notice(id, '', '保存できませんでした', vi.fn(), 'error', { url: `https://example.com/${id}` });
+  document.querySelector<HTMLButtonElement>('.toast-details-toggle')!.click();
+  const rows = document.querySelectorAll('.toast-failure');
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    expect(row.querySelector('.toast-failure-actions > a')).not.toBeNull();
+    expect(row.querySelector('.toast-failure-actions > button.action')).not.toBeNull();
+    expect(row.querySelector(':scope > a, :scope > button')).toBeNull();
+  }
+});
+
 test('自動再試行待ちはエラーにせず、手動再試行を出さない', () => {
   toasts.notice('queued', '', '接続が戻るまで保存を待機しています', undefined, 'idle');
   vi.advanceTimersByTime(60);
@@ -101,7 +132,7 @@ test('更新案内は保存失敗の件数に混ぜず、操作案内を直接�
   expect(document.body.textContent).not.toContain('2件保存できませんでした');
 });
 
-test('保存中は消さず、最後の保存完了から1秒後に消す', () => {
+test('保存中は消さず、最後の保存完了から2秒後に消す', () => {
   toasts.begin('a');
   vi.advanceTimersByTime(10000);
   expect(document.querySelector('[data-hologram-save-progress]')).not.toBeNull();
@@ -111,7 +142,7 @@ test('保存中は消さず、最後の保存完了から1秒後に消す', () =
   vi.advanceTimersByTime(1000);
   expect(document.body.textContent).toContain('保存中 1件');
   toasts.end('b', true);
-  vi.advanceTimersByTime(999);
+  vi.advanceTimersByTime(1999);
   expect(document.querySelector('[data-hologram-save-progress]')).not.toBeNull();
   vi.advanceTimersByTime(1);
   expect(document.querySelector('[data-hologram-save-progress]')).toBeNull();
@@ -123,7 +154,7 @@ test('保存中と成功には閉じるボタンを表示せず、読み上げ�
   toasts.end('focus', true);
   expect(document.querySelector('[data-hologram-save-progress] button')).toBeNull();
   expect(document.querySelectorAll('[data-hologram-save-progress] .label > span:not([aria-hidden])')).toHaveLength(1);
-  vi.advanceTimersByTime(1000);
+  vi.advanceTimersByTime(2000);
   expect(document.querySelector('[data-hologram-save-progress]')).toBeNull();
 });
 

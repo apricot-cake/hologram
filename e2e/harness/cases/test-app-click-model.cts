@@ -91,7 +91,10 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
     const c = selectedCard();
     return c ? postCards().indexOf(c) : -1;
   };
-  const arrow = (key) => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  // 実際のキー入力は document ではなく、クリック時にフォーカスされたグリッドへ
+  // 届く。ここでも activeElement から発火し、グリッド外のイベントを拒む製品側の
+  // フォーカス境界を迂回しない（入力欄などの保護も同じ event.target を見る）。
+  const arrow = (key) => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   const click = (el, mods?) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   // このパネルには自前の id が無い（P2⑦）— data-slot がフックで、中の部品と

@@ -3,12 +3,9 @@
 // ここで固定するのは、機械的に押さえられる2つの受け入れ条件。①先読みの対象は「隣接」に
 // 限る（＝ページ数の多いタブでもメモリが際限なく増えず、保持する枚数の上限は半径だけで
 // 決まる）②画像でないもの（動画・うごイラのアーカイブ）は先読みの対象にしない。
-// 本当に速く感じるか（fetch と decode が実際に温まっているか）は実機の Electron で測る
+// 本当に速く感じるか（fetch が実際に温まっているか）は実機の Electron で測る
 // 領分＝ここでは扱わない。
 //
-// `new Image()` はブラウザ側の API なので、保持と追い出しの帳簿だけを見るために、最小限の
-// ものを global へスタブとして置く（素の node 環境にはこのグローバルが無い）。
-
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as P from './preload';
 
@@ -79,41 +76,36 @@ describe('neighborPreloadSources: 隣接だけ・近い順・前が先', () => {
 });
 
 describe('createNeighborPreloader: 保持と追い出しの帳簿', () => {
-  // decode() が呼ばれた時点の src と decoding を記録する（属性は構築の後で代入されるので、
-  // コンストラクタで読むと空の値になる）。
-  const made: { src: string; decoding: string }[] = [];
-  class FakeImage {
-    src = '';
-    decoding = '';
-    decode() {
-      made.push({ src: this.src, decoding: this.decoding });
-      return Promise.resolve();
-    }
-  }
-  class FailingImage {
-    src = '';
-    decoding = '';
-    decode() {
-      return Promise.reject(new Error('EncodingError'));
-    }
-  }
-  vi.stubGlobal('Image', FakeImage);
+  const made: Array<{ rel: string; as: string; href: string; removed: boolean; remove(): void }> = [];
+  vi.stubGlobal('document', {
+    createElement: vi.fn(() => ({
+      rel: '',
+      as: '',
+      href: '',
+      removed: false,
+      remove() {
+        this.removed = true;
+      },
+    })),
+    head: { append: vi.fn((link) => made.push(link)) },
+  });
   afterEach(() => {
     made.length = 0;
   });
 
-  test('sync は保持集合を渡された通りにする＝新規は decode、離れたものは手放す', () => {
+  test('sync は保持集合を渡された通りにする＝新規は取得だけ予約し、離れたものは手放す', () => {
     const p = P.createNeighborPreloader();
     p.sync(['a', 'b']);
     expect(p.held()).toEqual(['a', 'b']);
-    expect(made.map((m) => m.src)).toEqual(['a', 'b']);
-    expect(made.every((m) => m.decoding === 'async')).toBe(true);
+    expect(made.map((m) => m.href)).toEqual(['a', 'b']);
+    expect(made.every((m) => m.rel === 'preload' && m.as === 'image')).toBe(true);
 
-    // 1枚進んだ後の形。持ち続けているものは作り直さない（decode のやり直しを避ける）
+    // 1枚進んだ後の形。持ち続けているものは作り直さない。
     p.sync(['c', 'a']);
     expect(p.held().sort()).toEqual(['a', 'c']);
     expect(made).toHaveLength(3);
-    expect(made[2]?.src).toBe('c');
+    expect(made[2]?.href).toBe('c');
+    expect(made[1]?.removed).toBe(true);
   });
 
   test('保持数は渡された枚数を超えない＝連続移動でも積み上がらない', () => {
@@ -127,14 +119,6 @@ describe('createNeighborPreloader: 保持と追い出しの帳簿', () => {
     p.sync(['a', 'b']);
     p.clear();
     expect(p.held()).toEqual([]);
-  });
-
-  test('decode() の失敗は握りつぶす＝欠けた隣は未処理の Promise 拒否にしない', async () => {
-    vi.stubGlobal('Image', FailingImage);
-    const p = P.createNeighborPreloader();
-    expect(() => p.sync(['gone'])).not.toThrow();
-    await Promise.resolve();
-    expect(p.held()).toEqual(['gone']);
-    vi.stubGlobal('Image', FakeImage);
+    expect(made.every((m) => m.removed)).toBe(true);
   });
 });

@@ -1,183 +1,65 @@
 'use strict';
-
-// CDP を公開した開発用 Chrome プロファイルへ、日常用と同じ unpacked
-// リリースビルドを読み込む。プロファイル固有の違いは storage.local の
-// Native Host 選択だけで、ソースやバンドルは分けない。
-
 const fs = require('node:fs');
 const path = require('node:path');
-const WebSocket = require('ws');
 const { waitFor } = require('./lib-wait.cts');
-
 const EXPECTED_EXTENSION_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 const NATIVE_HOST_PROFILE_KEY = 'nativeHost.profile.v1';
 const DEVELOPMENT_NATIVE_HOST_PROFILE = 'development';
-const DEFAULT_CDP_URL = 'http://127.0.0.1:9223';
 
-async function cdpVersion(cdpUrl = DEFAULT_CDP_URL): Promise<any> {
-  const response = await fetch(new URL('/json/version', cdpUrl), {
-    signal: AbortSignal.timeout(1000),
-  });
-  if (!response.ok) throw new Error(`CDP が HTTP ${response.status} を返しました`);
-  const version = await response.json();
-  if (typeof version?.webSocketDebuggerUrl !== 'string') throw new Error('CDP のブラウザ接続先がありません');
-  return version;
-}
-
-async function cdpReady(cdpUrl = DEFAULT_CDP_URL): Promise<boolean> {
-  try {
-    await cdpVersion(cdpUrl);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-class CdpClient {
-  ws: any;
-  nextId = 1;
-  pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
-
-  constructor(ws: any) {
-    this.ws = ws;
-    ws.on('message', (data: unknown) => {
-      const message = JSON.parse(String(data));
-      const item = typeof message.id === 'number' ? this.pending.get(message.id) : null;
-      if (!item) return;
-      this.pending.delete(message.id);
-      clearTimeout(item.timer);
-      if (message.error) item.reject(new Error(`${message.error.message || 'CDP error'} (${message.error.code ?? 'unknown'})`));
-      else item.resolve(message.result);
-    });
-    ws.on('close', () => {
-      for (const [, item] of this.pending) {
-        clearTimeout(item.timer);
-        item.reject(new Error('CDP 接続が閉じました'));
-      }
-      this.pending.clear();
-    });
-  }
-
-  send(method: string, params: Record<string, unknown> = {}): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const id = this.nextId++;
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${method} が10秒以内に完了しませんでした`));
-      }, 10_000);
-      this.pending.set(id, { resolve, reject, timer });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  close(): void {
-    this.ws.close();
-  }
-}
-
-async function connectWebSocket(webSocketDebuggerUrl: string): Promise<CdpClient> {
-  const ws = new WebSocket(webSocketDebuggerUrl);
-  await new Promise<void>((resolve, reject) => {
-    ws.once('open', resolve);
-    ws.once('error', reject);
-  });
-  return new CdpClient(ws);
-}
-
-async function connectBrowser(cdpUrl = DEFAULT_CDP_URL): Promise<CdpClient> {
-  const version = await cdpVersion(cdpUrl);
-  return connectWebSocket(version.webSocketDebuggerUrl);
-}
-
-async function connectExtensionWorker(extensionId: string, cdpUrl = DEFAULT_CDP_URL): Promise<CdpClient> {
-  let client: CdpClient | null = null;
+async function extensionWorker(context: any): Promise<any> {
+  let worker: any;
   await waitFor(
-    `拡張機能 ${extensionId} の Service Worker がCDPに現れること`,
+    '開発用拡張機能の Service Worker',
     async () => {
-      const response = await fetch(new URL('/json/list', cdpUrl), { signal: AbortSignal.timeout(1000) });
-      const targets = response.ok ? await response.json() : [];
-      const worker = Array.isArray(targets) ? targets.find((target) => target?.type === 'service_worker' && typeof target.url === 'string' && target.url.startsWith(`chrome-extension://${extensionId}/`) && typeof target.webSocketDebuggerUrl === 'string') : null;
-      if (!worker) return false;
-      const candidate = await connectWebSocket(worker.webSocketDebuggerUrl);
-      try {
-        // loadUnpacked の直後には終了中の旧 worker が一覧に残る。
-        // 対象拡張機能のストレージを読めることまで確認してから使う。
-        await candidate.send('Extensions.getStorageItems', { id: extensionId, storageArea: 'local', keys: [NATIVE_HOST_PROFILE_KEY] });
-        client = candidate;
-        return true;
-      } catch {
-        candidate.close();
-        return false;
+      for (const candidate of context.serviceWorkers()) {
+        if (!candidate.url().startsWith(`chrome-extension://${EXPECTED_EXTENSION_ID}/`)) continue;
+        try {
+          await candidate.evaluate(async () => (globalThis as any).chrome.storage.local.get('nativeHost.profile.v1'));
+          worker = candidate;
+          return true;
+        } catch {
+          /* 再読み込みで終了中の worker は使わない。 */
+        }
       }
+      return false;
     },
     { timeoutMs: 5000, pollMs: 100 },
   );
-  if (!client) throw new Error('拡張機能の Service Worker に接続できませんでした');
-  return client;
+  return worker;
 }
 
-async function configureDevelopmentExtension(extensionDir: string, cdpUrl = DEFAULT_CDP_URL): Promise<{ id: string; path: string }> {
+async function configureDevelopmentExtension(extensionDir: string, context: any, browser = context.browser()): Promise<{ id: string; path: string }> {
   const absolute = path.resolve(extensionDir);
-  if (!fs.existsSync(path.join(absolute, 'manifest.json'))) {
-    throw new Error(`共有リリースビルドがありません: ${absolute}`);
-  }
-
-  const cdp = await connectBrowser(cdpUrl);
+  if (!fs.existsSync(path.join(absolute, 'manifest.json'))) throw new Error(`共有リリースビルドがありません: ${absolute}`);
+  const cdp = await browser.newBrowserCDPSession();
   try {
     const first = await cdp.send('Extensions.loadUnpacked', { path: absolute });
-    if (first?.id !== EXPECTED_EXTENSION_ID) {
-      throw new Error(`読み込んだ拡張機能 ID が違います: ${first?.id || 'unknown'}`);
-    }
-
-    const worker = await connectExtensionWorker(EXPECTED_EXTENSION_ID, cdpUrl);
-    try {
-      // Extensionsのstorage操作は、対象拡張機能のService Workerに接続した
-      // CDPセッションからだけ許可される。
-      await worker.send('Extensions.setStorageItems', {
-        id: EXPECTED_EXTENSION_ID,
-        storageArea: 'local',
-        values: { [NATIVE_HOST_PROFILE_KEY]: DEVELOPMENT_NATIVE_HOST_PROFILE },
-      });
-    } finally {
-      worker.close();
-    }
-
-    // storage.local を設定した後にもう一度読み込み、CDPによる拡張機能の再読み込みと
-    // プロファイル設定の反映を1つの操作として完了させる。
+    if (first?.id !== EXPECTED_EXTENSION_ID) throw new Error(`読み込んだ拡張機能 ID が違います: ${first?.id || 'unknown'}`);
+    const worker = await extensionWorker(context);
+    await worker.evaluate(
+      async ({ key, value }: { key: string; value: string }) => {
+        await (globalThis as any).chrome.storage.local.set({ [key]: value });
+      },
+      { key: NATIVE_HOST_PROFILE_KEY, value: DEVELOPMENT_NATIVE_HOST_PROFILE },
+    );
     const second = await cdp.send('Extensions.loadUnpacked', { path: absolute });
     if (second?.id !== EXPECTED_EXTENSION_ID) throw new Error('開発用プロファイルで拡張機能を再読み込みできませんでした');
-
     const { extensions } = await cdp.send('Extensions.getExtensions');
-    const verifyWorker = await connectExtensionWorker(EXPECTED_EXTENSION_ID, cdpUrl);
-    let data: Record<string, unknown>;
-    try {
-      ({ data } = await verifyWorker.send('Extensions.getStorageItems', {
-        id: EXPECTED_EXTENSION_ID,
-        storageArea: 'local',
-        keys: [NATIVE_HOST_PROFILE_KEY],
-      }));
-    } finally {
-      verifyWorker.close();
-    }
     const loaded = extensions?.find((extension: any) => extension.id === EXPECTED_EXTENSION_ID);
-    if (!loaded?.enabled || path.resolve(loaded.path).toLowerCase() !== absolute.toLowerCase()) {
-      throw new Error(`開発用プロファイルが共有リリースビルドを読み込んでいません: ${loaded?.path || 'not loaded'}`);
-    }
-    if (data?.[NATIVE_HOST_PROFILE_KEY] !== DEVELOPMENT_NATIVE_HOST_PROFILE) {
-      throw new Error('開発用 Native Host のプロファイル設定を確認できませんでした');
-    }
+    if (!loaded?.enabled || path.resolve(loaded.path).toLowerCase() !== absolute.toLowerCase()) throw new Error(`開発用プロファイルが共有リリースビルドを読み込んでいません: ${loaded?.path || 'not loaded'}`);
+    const verifyWorker = await extensionWorker(context);
+    const data = await verifyWorker.evaluate(async (key: string) => (globalThis as any).chrome.storage.local.get(key), NATIVE_HOST_PROFILE_KEY);
+    if (data?.[NATIVE_HOST_PROFILE_KEY] !== DEVELOPMENT_NATIVE_HOST_PROFILE) throw new Error('開発用 Native Host のプロファイル設定を確認できませんでした');
     return { id: EXPECTED_EXTENSION_ID, path: absolute };
   } finally {
-    cdp.close();
+    await cdp.detach();
   }
 }
 
-function selectDevelopmentPages(targets: any[], matches: string[]): any[] {
-  // 常駐サイトの登録は origin/* 単位。配備した manifest を対象範囲の正本にする。
-  return targets.filter((target) => {
-    if (target.type !== 'page' || typeof target.webSocketDebuggerUrl !== 'string') return false;
+function selectDevelopmentPages(pages: any[], matches: string[]): any[] {
+  return pages.filter((page) => {
     try {
-      const url = new URL(target.url);
+      const url = new URL(page.url());
       return /^https?:$/.test(url.protocol) && matches.includes(`${url.origin}/*`);
     } catch {
       return false;
@@ -185,54 +67,17 @@ function selectDevelopmentPages(targets: any[], matches: string[]): any[] {
   });
 }
 
-async function reloadDevelopmentPages(extensionDir: string, cdpUrl = DEFAULT_CDP_URL): Promise<number> {
+async function reloadDevelopmentPages(extensionDir: string, context: any): Promise<number> {
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDir, 'manifest.json'), 'utf8'));
   const matches = (manifest.content_scripts || []).flatMap((script: { matches?: string[] }) => script.matches || []);
-  const response = await fetch(new URL('/json/list', cdpUrl), { signal: AbortSignal.timeout(1000) });
-  if (!response.ok) throw new Error(`開発用Chromeのタブ一覧を取得できません: HTTP ${response.status}`);
-  const targets = selectDevelopmentPages(await response.json(), matches);
-  const results = await Promise.allSettled(
-    targets.map(async (target) => {
-      const page = await connectWebSocket(target.webSocketDebuggerUrl);
-      try {
-        const before = await page.send('Page.getFrameTree');
-        await page.send('Page.reload');
-        await waitFor(
-          `開発用Chromeの ${new URL(target.url).hostname} の再読み込み`,
-          async () => {
-            try {
-              const current = await page.send('Page.getFrameTree');
-              if (current.frameTree.frame.loaderId === before.frameTree.frame.loaderId) return false;
-              const state = await page.send('Runtime.evaluate', { expression: 'document.readyState', returnByValue: true });
-              return state.result?.value === 'complete';
-            } catch {
-              // ナビゲーションで実行コンテキストが切り替わる間は待つ。
-              return false;
-            }
-          },
-          { timeoutMs: 15_000, pollMs: 100 },
-        );
-      } finally {
-        page.close();
-      }
-    }),
-  );
+  const pages = selectDevelopmentPages(context.pages(), matches);
+  const results = await Promise.allSettled(pages.map((page) => page.reload({ waitUntil: 'load', timeout: 15_000 })));
   const failures = results.filter((result) => result.status === 'rejected');
   if (failures.length)
     throw new AggregateError(
       failures.map((result) => result.reason),
       `開発用Chromeのサイト再読み込みに ${failures.length} 件失敗しました`,
     );
-  return targets.length;
+  return pages.length;
 }
-
-module.exports = {
-  DEFAULT_CDP_URL,
-  DEVELOPMENT_NATIVE_HOST_PROFILE,
-  EXPECTED_EXTENSION_ID,
-  NATIVE_HOST_PROFILE_KEY,
-  cdpReady,
-  configureDevelopmentExtension,
-  reloadDevelopmentPages,
-  selectDevelopmentPages,
-};
+module.exports = { DEVELOPMENT_NATIVE_HOST_PROFILE, EXPECTED_EXTENSION_ID, NATIVE_HOST_PROFILE_KEY, extensionWorker, configureDevelopmentExtension, reloadDevelopmentPages, selectDevelopmentPages };

@@ -77,6 +77,22 @@ describe('retireScreenshotImages', () => {
     expect(fs.existsSync(path.join(folder, 'shared.jpg'))).toBe(true);
   });
 
+  test('投稿やプロフィールが参照するアバターとバナーは削除しない', () => {
+    const { folder, sqlite } = library();
+    const files = ['avatars/post.png', 'avatars/profile.png', 'banners/profile.png'];
+    for (const [index, file] of files.entries()) {
+      post(sqlite, `old-shot-${index}`, file, null);
+      fs.mkdirSync(path.dirname(path.join(folder, file)), { recursive: true });
+      fs.writeFileSync(path.join(folder, file), file);
+    }
+    post(sqlite, 'avatar-owner', 'items/avatar-owner/image.png', 'web');
+    sqlite.prepare('UPDATE posts SET avatarFile = ? WHERE captureId = ?').run(files[0], 'avatar-owner');
+    sqlite.prepare('INSERT INTO poster_profiles (posterKey, avatarFile, bannerFile, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?, ?, ?, ?, ?, ?, ?)').run('x:user', files[1], files[2], 'hash', 'capture', '2026-09-04T00:00:00.000Z', '2026-09-04T00:00:00.000Z');
+
+    expect(retireScreenshotImages(sqlite, folder)).toEqual({ posts: 3, trash: 0, files: 0 });
+    for (const file of files) expect(fs.existsSync(path.join(folder, file))).toBe(true);
+  });
+
   test('ゴミ箱の画像ファイルと参照も取り除く', () => {
     const { folder, sqlite } = library();
     const trash = path.join(folder, '.trash');

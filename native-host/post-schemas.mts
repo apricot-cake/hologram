@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { normalizeTagNames } from './tag-normalize.mts';
+import { normalizeTagNames, tagNameInputIsSafe } from './tag-normalize.mts';
 
 // 省略と null はデータがない状態。不正な型は欠損へ読み替えない。
 const text = z
@@ -44,11 +44,23 @@ export const QuotedPostSchema = z.object({
   cw: text,
   media: z.array(MediaItemSchema).default([]),
 });
-export const PollChoiceSchema = z.object({ text: z.string().min(1), votes: count });
-export const PollSchema = z.object({ choices: z.array(PollChoiceSchema).min(1), multiple: flag, expiresAt: text });
+// 外部インスタンスやZIPの投票を、保存・読み出しで同じ処理量上限に揃える。
+// 文字列の長さはUTF-16コード単位。各サービスの設定上限ではない。
+export const MAX_POLL_CHOICES = 100;
+export const MAX_POLL_CHOICE_TEXT_LENGTH = 1_000;
+export const PollChoiceSchema = z.object({
+  text: z
+    .string()
+    .min(1)
+    .refine((value) => value.length <= MAX_POLL_CHOICE_TEXT_LENGTH, { message: 'Poll choice text exceeds UTF-16 length limit' }),
+  votes: count,
+});
+export const PollSchema = z.object({ choices: z.array(PollChoiceSchema).min(1).max(MAX_POLL_CHOICES), multiple: flag, expiresAt: text });
 export const LinkCardSchema = z.object({ url: z.string().min(1), title: text, description: text, thumbnailFile: text });
 export const ProfileLinkSchema = z.object({ name: z.string().min(1), value: z.string().min(1) });
 export const SaveScopeSchema = z.enum(['post', 'media']);
+// NFKC の前に処理量を検査する。文字数上限や transform 後の切り詰めではない。
+export const TagNameInputSchema = z.string().refine(tagNameInputIsSafe, { message: 'Too many consecutive combining marks' });
 export const PostRecordSchema = z.object({
   captureId: z.string().min(1),
   saveScope: SaveScopeSchema.default('post'),
@@ -98,8 +110,8 @@ export const PostRecordSchema = z.object({
   seriesId: text,
   seriesTitle: text,
   seriesOrder: count,
-  hashtags: z.array(z.string()).default([]).transform(normalizeTagNames),
-  tags: z.array(z.string()).default([]).transform(normalizeTagNames),
+  hashtags: z.array(TagNameInputSchema).default([]).transform(normalizeTagNames),
+  tags: z.array(TagNameInputSchema).default([]).transform(normalizeTagNames),
   domFilled: z.array(z.string()).default([]),
   media: z.array(MediaItemSchema).default([]),
   imageIndex: count,

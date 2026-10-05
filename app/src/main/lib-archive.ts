@@ -1,28 +1,28 @@
 import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
 import { PostFlagsSchema } from '../shared/data-schemas.ts';
-import { PortableClassifiedTag } from '../shared/tag-classification.ts';
-import { exportTagClassification, importClassifiedTag } from './lib-tag-classification.ts';
+import { PortableClassifiedTagVocabulary } from '../shared/tag-classification.ts';
+import { exportTagClassification, importClassifiedTagVocabulary } from './lib-tag-classification.ts';
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
-import { openPromise as openZipForRead } from 'yauzl';
+import { pipeline } from 'node:stream/promises';
+import { fromFdPromise as openZipFdForRead, openPromise as openZipForRead } from 'yauzl';
 import type { Entry as ZipEntry, ZipFile as ZipReader } from 'yauzl';
 import { ZipFile } from 'yazl';
 import type Database from 'better-sqlite3';
 import { commitFileAtomic } from './lib-atomic.ts';
-import { fillCardDims } from './lib-card-dims.ts';
-import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
-import { postCapturedVia, postsFromDb } from './lib-db-query.ts';
+import { postCapturedVia, postsFromDbSync } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
 // config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
 // ライブラリには、古い写しがフォルダに残っていることがある。
 const EXPORT_SKIP = new Set(['config.json', 'tabs.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'classified-tags.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
+const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'classified-tags.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -49,12 +49,22 @@ const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 書庫全体で展開後
 // させていると、細工したエントリが、汎用の防ぎが働くより前にメインプロセスの中で数百 MB の
 // 文字列と解析済み JSON へ展開されうる。
 const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
+// 投稿サイドカーも JSON.parse の前に文字列としてメインプロセスのメモリへ載る。画像・動画向けの
+// 1 GiB 枠を共用すると、小さな圧縮ファイルから数百 MiB を展開できてしまうため、整理 JSON と
+// 同じ、通常の投稿レコードには十分な専用枠を宣言値と実際の読み取り量の両方へ掛ける。
+const MAX_ZIP_CAPTURE_JSON_BYTES = 16 * 1024 * 1024; // 16 MiB
 // pixiv のうごイラの書庫 (#119 St3) は第三者のファイルで、再生側はそれを1フレームずつ展開する
 // (#506)。だから数 GB のメディアの上限に相乗りさせず、フレーム単位の枠を与える＝フレームは
 // 静止画1枚を対象とする。これと対になる書庫
 // 単位の合計は意図して持たない＝再生側が書庫を丸ごと抱えることは決してなく、取得の段が自分の
 // 大きさの上限を超えたものをすでに断っている。
 const MAX_UGOIRA_FRAME_BYTES = 64 * 1024 * 1024; // 64 MiB
+// うごイラは中央ディレクトリだけを索引にして ZipFile（= fd）を短時間共有する。展開済みフレーム
+// はここへ置かない。書庫数と索引エントリ総数の両方を縛り、巨大な正常入力が複数来ても
+// Entry オブジェクトと fd が際限なく残らないようにする。
+const MAX_UGOIRA_OPEN_ARCHIVES = 4;
+const MAX_UGOIRA_INDEXED_ENTRIES = MAX_ZIP_ENTRIES;
+const UGOIRA_INDEX_IDLE_MS = 30_000;
 class ZipLimitError extends Error {}
 // yauzl は uncompressedSize を中央ディレクトリから直に読む（ZIP64 の追加欄があればそこから幅を
 // 広げる）ので、これはどんな大きさの書庫でも宣言された大きさになる。形の壊れた値と欠けた値は
@@ -186,6 +196,69 @@ function mergeFolders(rawCur: unknown, rawInc: unknown) {
   const valid = new Set(folders.map((c) => c.id));
   const activeId = cur && valid.has(cur.activeId) ? cur.activeId : inc && valid.has(inc.activeId) ? inc.activeId : null;
   return { folders, activeId };
+}
+
+// collections.json は folders.json より前の「保存した検索」の名前だった。単に外側のキーを
+// folders へ変えて FolderSchema に渡すと、旧 q は unknown key として捨てられ、tree の深い
+// collection 葉も現行の DB 読み込みでは変換されない。書庫の境界で、内容を見て現形式へ
+// 畳んでから検証する（途中の版が folders.json の中へ collections を書いた場合も同じ）。
+const MAX_ARCHIVE_QUERY_DEPTH = 128;
+const MAX_ARCHIVE_QUERY_NODES = 10_000;
+function migrateLegacyQueryTree(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  const copy = (source: object) => (Array.isArray(source) ? [...source] : { ...source }) as Record<string, unknown>;
+  const root = copy(value);
+  const pending = [{ source: value, target: root, depth: 0 }];
+  let nodes = 1;
+  // 書庫の木の深さを JavaScript の呼出しスタックへ持ち込まない。
+  while (pending.length) {
+    const next = pending.pop();
+    if (!next) break;
+    const { source, target, depth } = next;
+    for (const [key, child] of Object.entries(source)) {
+      if (child && typeof child === 'object') {
+        if (depth >= MAX_ARCHIVE_QUERY_DEPTH || ++nodes > MAX_ARCHIVE_QUERY_NODES) throw new ZipLimitError('archive query tree exceeds depth or node limit');
+        const cloned = copy(child);
+        target[key] = cloned;
+        pending.push({ source: child, target: cloned, depth: depth + 1 });
+      }
+    }
+    if (target.type === 'collection') target.type = 'folder';
+  }
+  return root;
+}
+
+function migrateArchiveFolder(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const folder = raw as Record<string, unknown>;
+  let tree = migrateLegacyQueryTree(folder.tree);
+  const q = typeof folder.q === 'string' ? folder.q.trim() : '';
+  if (q) {
+    const textLeaf = { kind: 'cond', type: 'text', value: q };
+    if (tree && typeof tree === 'object' && (tree as any).kind === 'group' && (tree as any).op === 'and' && (tree as any).neg === false && Array.isArray((tree as any).children)) {
+      tree = { ...(tree as any), children: [textLeaf, ...(tree as any).children] };
+    } else {
+      tree = { kind: 'group', op: 'and', neg: false, children: tree ? [textLeaf, tree] : [textLeaf] };
+    }
+  }
+  // 明示された kind は保存時の意味そのもの。特に static collection を dynamic に変えると、
+  // items の所属を編集するフォルダが保存済み検索へ化けてしまう。kind の無い旧レコードだけを、
+  // 実際に検索情報を持つかどうかから判定する。
+  const kind = folder.kind === undefined ? (q || tree ? 'dynamic' : 'static') : folder.kind;
+  return { ...folder, kind, tree };
+}
+
+function foldersFromArchive(raw: unknown) {
+  if (!raw || typeof raw !== 'object') return FoldersSchema.parse(raw);
+  const state = raw as Record<string, unknown>;
+  if (Object.hasOwn(state, 'folders') && !Array.isArray(state.folders)) return FoldersSchema.parse(raw);
+  if (Object.hasOwn(state, 'collections') && !Array.isArray(state.collections)) return FoldersSchema.parse({ folders: state.collections, activeId: state.activeId });
+  // folders 配列にも q を残した途中版があるため、ファイル名や外側のキーではなく、両配列の
+  // 各レコードを同じ境界移行へ通す。現行レコードは kind が明示されているので意味は変わらない。
+  const modern = Array.isArray(state.folders) ? FoldersSchema.parse({ folders: state.folders.map(migrateArchiveFolder), activeId: state.activeId }) : { folders: [], activeId: null };
+  const legacy = Array.isArray(state.collections) ? FoldersSchema.parse({ folders: state.collections.map(migrateArchiveFolder), activeId: state.activeId }) : { folders: [], activeId: null };
+  // 同じ id が両形式にある半移行データでは、情報を多く持つ現形式を正本にする。
+  return mergeFolders(modern, legacy);
 }
 function mergeUngrouped(rawCur: unknown, rawInc: unknown) {
   const cur = UngroupedSchema.parse(rawCur);
@@ -369,27 +442,21 @@ const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v)$/i;
 // なので、deflate を掛けても CPU を焼くだけで大きさはほぼ変わらない。
 // onBytes（任意）は、出力ファイルへ書いた累計のバイト数を報告する＝yazl のストリームとファイルの
 // 間に挟んだ Transform の取り出し口なので、パイプを乱さない。
-function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: number) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const out = fs.createWriteStream(outPath);
-    zip.outputStream.on('error', reject);
-    out.on('error', reject);
-    out.on('close', () => resolve());
-    if (onBytes) {
-      let written = 0;
-      const counter = new Transform({
-        transform(chunk, _enc, cb) {
-          written += chunk.length;
-          onBytes(written);
-          cb(null, chunk);
-        },
-      });
-      counter.on('error', reject);
-      zip.outputStream.pipe(counter).pipe(out);
-    } else {
-      zip.outputStream.pipe(out);
-    }
-  });
+async function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: number) => void): Promise<void> {
+  const out = fs.createWriteStream(outPath);
+  if (onBytes) {
+    let written = 0;
+    const counter = new Transform({
+      transform(chunk, _enc, cb) {
+        written += chunk.length;
+        onBytes(written);
+        cb(null, chunk);
+      },
+    });
+    await pipeline(zip.outputStream, counter, out);
+  } else {
+    await pipeline(zip.outputStream, out);
+  }
 }
 
 function toSidecarJson(rec: any, capturedVia: string | null) {
@@ -397,85 +464,142 @@ function toSidecarJson(rec: any, capturedVia: string | null) {
   return { ...rest, capturedVia };
 }
 
-async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, trashDir: string | null, outPath: string, opts: { includeTrash?: boolean } = {}, nowIso?: string, onProgress?: (written: number, total: number) => void) {
-  const zip = new ZipFile();
+async function prepareCompleteExport(sqlite: Database.Database, srcFolder: string, trashDir: string | null, opts: { includeTrash?: boolean; stageParent?: string } = {}, nowIso?: string) {
+  const files: Array<{ source: string; entry: string }> = [];
+  const json: Array<{ value: unknown; entry: string }> = [];
+  const stores: Array<{ dir: string; prefix: string; keys: string[] }> = [];
   let fileCount = 0;
   let totalBytes = 0;
-  const addFile = async (fullPath, entryName) => {
-    try {
-      totalBytes += (await fs.promises.stat(fullPath)).size;
-    } catch {
-      /* 大きさが分からない＝進捗がわずかに先走るだけ */
+  const addFile = (source: string, entry: string) => {
+    files.push({ source, entry });
+    fileCount++;
+  };
+  const addJson = (value: unknown, entry: string) => {
+    json.push({ value, entry });
+    fileCount++;
+  };
+  const collect = (dir: string, filter?: (name: string) => boolean): string[] => {
+    if (!fs.existsSync(dir)) return [];
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && !EXPORT_SKIP.has(e.name) && !isVolatile(e.name) && (!filter || filter(e.name)))
+      .map((e) => e.name);
+  };
+  const queueItems = (dir: string, prefix: string) => {
+    if (!fs.existsSync(dir)) return;
+    const keys = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && isSafeEntryName(e.name))
+      .map((e) => e.name);
+    stores.push({ dir, prefix, keys });
+  };
+  const hasContent = sqlite.transaction(() => {
+    // バイナリは素のディスクの写し。.json の絞り込みは念のためのもの＝#302 以降ライブラリの
+    // フォルダは投稿ごとの JSON を1つも持たないが、移行前の残り物が、下で DB から作り直す
+    // レコードを覆い隠してはいけない。
+    for (const name of collect(srcFolder, (n) => !n.toLowerCase().endsWith('.json') && !/^hologram\.db(?:-(wal|shm))?$/i.test(n))) addFile(path.join(srcFolder, name), `library/${name}`);
+    for (const name of collect(path.join(srcFolder, 'avatars'))) addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
+    // #290: 共有のカスタム絵文字の置き場。avatars/ と同じく、ディスクを正本として扱う。
+    for (const name of collect(path.join(srcFolder, 'emoji'))) addFile(path.join(srcFolder, 'emoji', name), `library/emoji/${name}`);
+    queueItems(path.join(srcFolder, 'items'), 'library/items');
+    queueItems(path.join(srcFolder, 'quoted-media'), 'library/quoted-media');
+
+    // 投稿ごとのレコードを、サイドカーの形で DB から作り直したもの。
+    const posts = postsFromDbSync(sqlite);
+    const captureIds = posts.map((p: any) => p.captureId);
+    const capturedVia = postCapturedVia(sqlite, captureIds);
+    for (const rec of posts) {
+      addJson({ ...toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), tagClassification: exportTagClassification(sqlite, rec.captureId) }, `library/${rec.captureId}.json`);
     }
-    zip.addFile(fullPath, entryName, { compress: false });
-    fileCount++;
-  };
-  const addJson = (value: unknown, entryName: string) => {
-    const buf = Buffer.from(JSON.stringify(value, null, 2));
-    totalBytes += buf.length;
-    zip.addBuffer(buf, entryName);
-    fileCount++;
-  };
 
-  // バイナリは素のディスクの写し。.json の絞り込みは念のためのもの＝#302 以降ライブラリの
-  // フォルダは投稿ごとの JSON を1つも持たないが、移行前の残り物が、下で DB から作り直す
-  // レコードを覆い隠してはいけない。
-  for (const name of await collectFiles(srcFolder, (n) => !n.toLowerCase().endsWith('.json'))) await addFile(path.join(srcFolder, name), `library/${name}`);
-  for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
-  // #290: 共有のカスタム絵文字の置き場。avatars/ と同じく、ディスクを正本として扱う。
-  for (const name of await collectFiles(path.join(srcFolder, 'emoji'))) await addFile(path.join(srcFolder, 'emoji', name), `library/emoji/${name}`);
-  for (const name of await collectItemFiles(path.join(srcFolder, 'items'))) await addFile(path.join(srcFolder, 'items', ...name.split('/')), `library/items/${name}`);
-  for (const name of await collectItemFiles(path.join(srcFolder, 'quoted-media'))) await addFile(path.join(srcFolder, 'quoted-media', ...name.split('/')), `library/quoted-media/${name}`);
+    // 整理の層。ipc-organize.ts と ipc-config.ts が生きた読み取り経路としてすでに使っているのと
+    // 同じ getter を通して、DB から作り直す。
+    const dbw = createDbWriter(sqlite);
+    addJson(sqlite.prepare("SELECT t.name,t.category,w.name AS workName FROM tags t LEFT JOIN tags w ON w.id=t.workId WHERE t.category!='general'").all(), 'library/classified-tags.json');
+    addJson(dbw.getFolders(), 'library/folders.json');
+    // #810: id をキーにする IPC の読み取りではなく、名前に落とした射影を使う＝タグの id は
+    // ライブラリの中だけのものなので、それを書庫へ書き込むと、他所で取り込まれたときに違うタグを
+    // 指す（あるいはどのタグも指さない）。
+    addJson(dbw.getTagGroupNames(), 'library/tag-groups.json');
+    addJson(dbw.getUngrouped(), 'library/ungrouped.json');
+    addJson(dbw.getManualGroups(), 'library/manual-groups.json');
+    addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
+    addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
+    const posterProfiles = dbw.getPosterProfiles();
+    if (posterProfiles.profiles.length) addJson(posterProfiles, 'library/poster-profiles.json');
+    const tabs = dbw.getTabs();
+    if (tabs) addJson(tabs, 'library/tabs.json');
+    // poster-favorites.json: 機能は退役し、裏付ける DB のテーブルも無い＝書き出しからは落とす。
+    // （まだそれを持つ古い ZIP を取り込むために、ORG_MERGE と MERGERS には残してある。）
 
-  // 投稿ごとのレコードを、サイドカーの形で DB から作り直したもの。
-  const posts = await postsFromDb(sqlite);
-  const captureIds = posts.map((p: any) => p.captureId);
-  const capturedVia = postCapturedVia(sqlite, captureIds);
-  for (const rec of posts) {
-    addJson({ ...toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), tagClassification: exportTagClassification(sqlite, rec.captureId) }, `library/${rec.captureId}.json`);
+    // ゴミ箱は任意（既定では入れない）で、ファイルシステムだけのもの（ゴミ箱行きの投稿は DB に
+    // 存在しない＝ipc-trash.ts の delete-post が行を完全に取り除く）。だからこれは library/ へ
+    // 混ぜず、隣の接頭辞の下に置く素のディスクの写し。
+    if (opts.includeTrash && trashDir) {
+      for (const name of collect(trashDir)) addFile(path.join(trashDir, name), `.trash/${name}`);
+      queueItems(trashDir, '.trash');
+    }
+
+    const populated = (value: unknown): boolean => {
+      if (typeof value === 'string') return value.length > 0;
+      if (Array.isArray(value)) return value.length > 0;
+      if (value && typeof value === 'object') return Object.entries(value).some(([key, v]) => key !== 'version' && populated(v));
+      return false;
+    };
+    return posts.length > 0 || files.length > 0 || json.some((entry) => populated(entry.value));
+  })();
+  // 親の一覧は DB snapshot と同じ tick で固定する。項目ごとの I/O は await で譲り、
+  // 後から NativeHost が atomic rename で公開した別の item を一覧へ加えない。
+  for (const store of stores) {
+    for (const key of store.keys) {
+      const dir = path.join(store.dir, key);
+      for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+        if (entry.isFile() && isSafeEntryName(entry.name) && !EXPORT_SKIP.has(entry.name) && !isVolatile(entry.name)) addFile(path.join(dir, entry.name), `${store.prefix}/${key}/${entry.name}`);
+      }
+    }
   }
-
-  // 整理の層。ipc-organize.ts と ipc-config.ts が生きた読み取り経路としてすでに使っているのと
-  // 同じ getter を通して、DB から作り直す。
-  const dbw = createDbWriter(sqlite);
-  addJson(sqlite.prepare("SELECT t.name,t.category,w.name AS workName FROM tags t LEFT JOIN tags w ON w.id=t.workId WHERE t.category!='general'").all(), 'library/classified-tags.json');
-  addJson(dbw.getFolders(), 'library/folders.json');
-  // #810: id をキーにする IPC の読み取りではなく、名前に落とした射影を使う＝タグの id は
-  // ライブラリの中だけのものなので、それを書庫へ書き込むと、他所で取り込まれたときに違うタグを
-  // 指す（あるいはどのタグも指さない）。
-  addJson(dbw.getTagGroupNames(), 'library/tag-groups.json');
-  addJson(dbw.getUngrouped(), 'library/ungrouped.json');
-  addJson(dbw.getManualGroups(), 'library/manual-groups.json');
-  addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
-  addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
-  const posterProfiles = dbw.getPosterProfiles();
-  if (posterProfiles.profiles.length) addJson(posterProfiles, 'library/poster-profiles.json');
-  const tabs = dbw.getTabs();
-  if (tabs) addJson(tabs, 'library/tabs.json');
-  // poster-favorites.json: 機能は退役し、裏付ける DB のテーブルも無い＝書き出しからは落とす。
-  // （まだそれを持つ古い ZIP を取り込むために、ORG_MERGE と MERGERS には残してある。）
-
-  // ゴミ箱は任意（既定では入れない）で、ファイルシステムだけのもの（ゴミ箱行きの投稿は DB に
-  // 存在しない＝ipc-trash.ts の delete-post が行を完全に取り除く）。だからこれは library/ へ
-  // 混ぜず、隣の接頭辞の下に置く素のディスクの写し。
-  if (opts.includeTrash && trashDir) {
-    for (const name of await collectFiles(trashDir)) await addFile(path.join(trashDir, name), `.trash/${name}`);
-    for (const name of await collectItemFiles(trashDir)) await addFile(path.join(trashDir, ...name.split('/')), `.trash/${name}`);
+  const stage = await fs.promises.mkdtemp(path.join(opts.stageParent ?? os.tmpdir(), '.hologram-complete-export-'));
+  const dispose = () => fs.promises.rm(stage, { recursive: true, force: true });
+  try {
+    // 書き手を再開する前にファイルを逐次コピーし、ZIP の遅延読み取りを実ライブラリから切り離す。
+    for (let i = 0; i < files.length; i++) {
+      const target = path.join(stage, String(i));
+      await fs.promises.copyFile(files[i].source, target);
+      files[i].source = target;
+    }
+    return {
+      hasContent: hasContent || files.length > 0,
+      dispose,
+      async write(outPath: string, onProgress?: (written: number, total: number) => void) {
+        const zip = new ZipFile();
+        for (const file of files) {
+          totalBytes += (await fs.promises.stat(file.source)).size;
+          zip.addFile(file.source, file.entry, { compress: false });
+        }
+        for (const entry of json) {
+          const buf = Buffer.from(JSON.stringify(entry.value, null, 2));
+          totalBytes += buf.length;
+          zip.addBuffer(buf, entry.entry);
+        }
+        zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Hologram', kind: 'complete', version: 2, source: 'db', includesTrash: !!opts.includeTrash, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'hologram-export.json');
+        zip.end();
+        await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
+        return { fileCount };
+      },
+    };
+  } catch (error) {
+    await dispose();
+    throw error;
   }
+}
 
-  const manifest = {
-    app: 'Hologram',
-    kind: 'complete',
-    version: 2,
-    source: 'db',
-    includesTrash: !!opts.includeTrash,
-    exportedAt: nowIso || new Date().toISOString(),
-    fileCount,
-  };
-  zip.addBuffer(Buffer.from(JSON.stringify(manifest, null, 2)), 'hologram-export.json');
-  zip.end();
-  await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
-  return { fileCount };
+async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, trashDir: string | null, outPath: string, opts: { includeTrash?: boolean } = {}, nowIso?: string, onProgress?: (written: number, total: number) => void) {
+  const snapshot = await prepareCompleteExport(sqlite, srcFolder, trashDir, { ...opts, stageParent: path.dirname(outPath) }, nowIso);
+  try {
+    return await snapshot.write(outPath, onProgress);
+  } finally {
+    await snapshot.dispose();
+  }
 }
 
 // 画像だけ。メディアのファイルを ZIP の直下に平らに置く（サイドカーも整理の JSON も無い）。
@@ -517,12 +641,25 @@ async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number,
 // 「書き出すものが在るか」を安く問い合わせる（readdir と stat だけで、ファイルは読まない）。
 // 空のライブラリで保存ダイアログが開かないようにするため。
 async function hasExportableFiles(srcFolder, imagesOnly) {
-  if ((await collectFiles(srcFolder, imagesOnly ? (n) => IMAGE_EXT.test(n) : undefined)).length) return true;
+  if ((await collectFiles(srcFolder, imagesOnly ? (n) => IMAGE_EXT.test(n) : (n) => !n.toLowerCase().endsWith('.json') && !/^hologram\.db(?:-(wal|shm))?$/i.test(n))).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'avatars'))).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'emoji'))).length) return true;
   if ((await collectItemFiles(path.join(srcFolder, 'items'))).some((name) => !imagesOnly || IMAGE_EXT.test(name))) return true;
   if ((await collectItemFiles(path.join(srcFolder, 'quoted-media'))).some((name) => !imagesOnly || IMAGE_EXT.test(name))) return true;
   return false;
+}
+
+async function hasCompleteExportContent(sqlite: Database.Database, folder: string, trash: string | null, includeTrash: boolean): Promise<boolean> {
+  if (sqlite.prepare("SELECT 1 FROM posts UNION ALL SELECT 1 FROM tags WHERE category!='general' LIMIT 1").get()) return true;
+  const writer = createDbWriter(sqlite);
+  const populated = (value: unknown): boolean => {
+    if (typeof value === 'string') return value.length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return !!value && typeof value === 'object' && Object.entries(value).some(([key, v]) => key !== 'version' && populated(v));
+  };
+  if ([writer.getFolders(), writer.getTagGroupNames(), writer.getUngrouped(), writer.getManualGroups(), writer.getPosterFolders(), writer.getPosterTagNames(), writer.getPosterProfiles(), writer.getTabs()].some(populated)) return true;
+  if (await hasExportableFiles(folder, false)) return true;
+  return !!(includeTrash && trash && ((await collectFiles(trash)).length || (await collectItemFiles(trash)).length));
 }
 
 // ZIP のエントリを1つディスクへ流し込み、展開した出力が maxBytes を超えたら中止する。エントリ
@@ -532,43 +669,19 @@ async function hasExportableFiles(srcFolder, imagesOnly) {
 // ZipFile からだし、上限をストリームの形に保つことが、回帰テストが素の Readable でこれを
 // 動かせる理由でもある。
 /** @returns {Promise<void>}＝resolve() が引数を取らないように型を付けている。 */
-function writeStreamCapped(src: Readable, tmpPath: string, maxBytes: number) {
-  return new Promise<void>((resolve, reject) => {
-    const out = fs.createWriteStream(tmpPath);
-    let written = 0;
-    let aborted = false;
-    const fail = (err) => {
-      if (aborted) return;
-      aborted = true;
-      // pause() ではなく destroy() を使う。yauzl はストリームの裏で fd の一部を開いたまま
-      // 持っていて、止めただけのものを放置すると書庫の fd を掴んだままになる。ここでは何も
-      // pipe() で流し込んでいないので、呼んで安全 (yauzl の README)。
-      try {
-        src.destroy();
-      } catch {
-        /* 握り潰す */
-      }
-      out.destroy();
-      reject(err);
-    };
-    src.on('data', (chunk) => {
-      if (aborted) return;
+async function writeStreamCapped(src: Readable, tmpPath: string, maxBytes: number): Promise<void> {
+  let written = 0;
+  const cap = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
       written += chunk.length;
-      if (written > maxBytes) {
-        fail(new ZipLimitError('entry exceeds per-entry byte cap'));
-        return;
-      }
-      out.write(chunk);
-    });
-    src.on('error', fail);
-    out.on('error', fail);
-    src.on('end', () => {
-      if (!aborted) out.end();
-    });
-    out.on('finish', () => {
-      if (!aborted) resolve();
-    });
+      if (written > maxBytes) callback(new ZipLimitError('entry exceeds per-entry byte cap'));
+      else callback(null, chunk);
+    },
   });
+  // ディスクの書き込みが追いつくまで展開を止める。dataイベントでwriteの戻り値を無視すると、
+  // 上限内の1GiBエントリでも書き込み待ちのBufferが全体に比例して溜まってしまう。
+  // pipelineは上限・読み取り・書き込みのどの失敗でも全ストリームを閉じてから戻る。
+  await pipeline(src, cap, fs.createWriteStream(tmpPath));
 }
 
 // ZIP のエントリをメモリへ丸ごと読み、展開後の実バイト数が maxBytes を超えたら中止する (#382)。
@@ -630,18 +743,26 @@ async function extractLibraryEntries(zipfile: ZipReader) {
       const name = libMatch[1];
       if (!isSafeLibraryPath(name)) continue; // Zip Slip: 区切り・遡り・絶対パスを断る（avatars/<name> と emoji/<name> は許す）
       if (EXPORT_SKIP.has(name)) continue;
-      if (MERGERS[name] || name === 'classified-tags.json') {
+      if (MERGERS[name] || name === 'collections.json' || name === 'classified-tags.json') {
         // 整理の JSON の枠 (#382) のうち、宣言された大きさに対する半分。上の汎用のエントリ
         // 単位の検査と同じく、展開が起きる前に断る。
         if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
         orgEntries[name] = entry;
-      } else captureEntries.push({ name, entry });
+      } else {
+        if (name.toLowerCase().endsWith('.json') && size > MAX_ZIP_CAPTURE_JSON_BYTES) {
+          throw new ZipLimitError('capture JSON entry "' + relPath + '" declares ' + size + ' bytes (> JSON cap ' + MAX_ZIP_CAPTURE_JSON_BYTES + ')');
+        }
+        captureEntries.push({ name, entry });
+      }
       continue;
     }
     const trashMatch = /^\.trash\/(.+)$/.exec(relPath);
     if (trashMatch) {
       const name = trashMatch[1];
       if (!isSafeTrashPath(name)) continue;
+      if (isTrashRecord(name) && size > MAX_ZIP_CAPTURE_JSON_BYTES) {
+        throw new ZipLimitError('trash JSON entry "' + relPath + '" declares ' + size + ' bytes (> JSON cap ' + MAX_ZIP_CAPTURE_JSON_BYTES + ')');
+      }
       trashEntries.push({ name, entry });
     }
   }
@@ -651,7 +772,11 @@ async function extractLibraryEntries(zipfile: ZipReader) {
 // エントリ単位のバイト数の上限を掛けた流し込みの書き込み。すでに在れば飛ばし（何度実行しても
 // 同じ／既存を潰さない）、一時ファイルへ書いてから不可分に rename する。取り込みのバイナリと
 // .trash/ の復元が共有する＝違うのは、どのディレクトリに着地するかだけ。
-async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: string, name: string): Promise<'imported' | 'skipped'> {
+function isTrashRecord(name: string): boolean {
+  return !name.includes('/') && name.toLowerCase().endsWith('.json');
+}
+
+async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: string, name: string, importedTrashRecord = false): Promise<'imported' | 'skipped'> {
   const dest = path.join(destDir, name);
   try {
     if (!isWithin(destDir, dest)) return 'skipped'; // 念のための Zip Slip の防ぎ
@@ -661,7 +786,22 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
     // 抜けたエントリにも上限が効く。中止したとき、commitFileAtomic は再送出の前に途中の一時
     // ファイルを落とす。
     try {
-      await commitFileAtomic(dest, async (tmp) => writeStreamCapped(await zipfile.openReadStreamPromise(entry), tmp, MAX_ZIP_ENTRY_BYTES), { tmpSuffix: '.tmp-import' });
+      await commitFileAtomic(
+        dest,
+        async (tmp) => {
+          if (importedTrashRecord) {
+            const bytes = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_CAPTURE_JSON_BYTES);
+            const raw = parseJsonLoose(bytes.toString('utf8'));
+            // ゴミ箱の復元用レコードにも置換指示を残さない。その他の情報は保持する。
+            PostRecordInputSchema.parse(raw);
+            PostFlagsSchema.parse(raw);
+            await fs.promises.writeFile(tmp, JSON.stringify({ ...raw, replaces: null }), 'utf8');
+          } else {
+            await writeStreamCapped(await zipfile.openReadStreamPromise(entry), tmp, MAX_ZIP_ENTRY_BYTES);
+          }
+        },
+        { tmpSuffix: '.tmp-import' },
+      );
     } catch (e) {
       if (e instanceof ZipLimitError) return 'skipped';
       throw e;
@@ -672,7 +812,7 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
   }
 }
 
-async function importCompleteZipToDb(sqlite: Database.Database, zipPath: string, destFolder: string) {
+async function prepareZipIntoEmptyDatabase(sqlite: Database.Database, zipPath: string, destFolder: string) {
   // autoClose:false にして、下の列挙の周回のあともエントリを読めるままにする
   // (openReadStream に fd が要る)。閉じるのは finally。
   const zipfile = await openZipForRead(zipPath, { autoClose: false });
@@ -714,14 +854,14 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
       /* 握り潰す */
     }
     for (const t of trashEntries) {
-      if ((await writeCaptureFile(zipfile, t.entry, trashDest, t.name)) === 'imported') imported++;
+      if ((await writeCaptureFile(zipfile, t.entry, trashDest, t.name, isTrashRecord(t.name))) === 'imported') imported++;
       else skipped++;
     }
   }
 
   const parseEntry = async (entry: ZipEntry): Promise<any> => {
+    const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_CAPTURE_JSON_BYTES);
     try {
-      const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_ENTRY_BYTES);
       return parseJsonLoose(buf.toString('utf8'));
     } catch {
       return null;
@@ -742,76 +882,83 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   const stmts = preparePostStmts(sqlite);
   const resolveTagId = makeTagResolver(sqlite);
   const dbWriter = createDbWriter(sqlite);
+  // 空の私有 DB の FK によって、既存ライブラリだけにある投稿への参照を失わない。
+  sqlite.exec('CREATE TABLE IF NOT EXISTS archive_org (name TEXT PRIMARY KEY, json TEXT NOT NULL)');
+  // UI の読み取りモデルに含まれない投稿・作者情報と所属も、worker 内で保持する。
+  sqlite.exec('CREATE TABLE IF NOT EXISTS archive_records (captureId TEXT PRIMARY KEY, json TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0)');
+  const storeRecord = sqlite.prepare('INSERT INTO archive_records(captureId,json) VALUES(?,?)');
+  const storeOrg = sqlite.prepare('INSERT OR REPLACE INTO archive_org(name,json) VALUES(?,?)');
+  const rememberOrg = (name: string, value: unknown) => storeOrg.run(name, JSON.stringify(value));
   const existingIds = new Set((sqlite.prepare('SELECT captureId FROM posts').all() as Array<{ captureId: string }>).map((r) => r.captureId));
+  if (orgEntries['classified-tags.json']) {
+    const vocab = PortableClassifiedTagVocabulary.parse(await parseOrgEntry(orgEntries['classified-tags.json']));
+    importClassifiedTagVocabulary(sqlite, vocab);
+  }
+  // 投稿は upsert ではなく、上のバイナリのキャプチャの書き込みと同じ「すでに在るものを決して
+  // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
+  // することは決してない。
+  for (const c of jsonCaptures) {
+    const raw = await parseEntry(c.entry);
+    const rec = { ...PostRecordInputSchema.parse(raw), ...PostFlagsSchema.parse(raw) };
+    if (existingIds.has(rec.captureId)) {
+      skipped++;
+      continue;
+    }
+    // 完全ZIPは投稿データとして取り込む。書庫の置換指示で既存投稿を削除しない。
+    // 私有 DB には入力値を保持する。非置換公開後、実際の宛先媒体を worker が計測する。
+    writePost(stmts, resolveTagId, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags, replaces: null });
+    storeRecord.run(rec.captureId, JSON.stringify({ ...rec, replaces: null }));
+    dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
+    existingIds.add(rec.captureId);
+    imported++;
+  }
 
-  sqlite.exec('BEGIN');
-  try {
-    if (orgEntries['classified-tags.json']) {
-      const vocab = PortableClassifiedTag.array().parse(await parseOrgEntry(orgEntries['classified-tags.json']));
-      for (const tag of vocab) importClassifiedTag(sqlite, tag);
-    }
-    // 投稿は upsert ではなく、上のバイナリのキャプチャの書き込みと同じ「すでに在るものを決して
-    // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
-    // することは決してない。
-    for (const c of jsonCaptures) {
-      const raw = await parseEntry(c.entry);
-      const rec = { ...PostRecordInputSchema.parse(raw), ...PostFlagsSchema.parse(raw) };
-      if (existingIds.has(rec.captureId)) {
-        skipped++;
-        continue;
-      }
-      writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags })));
-      dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
-      existingIds.add(rec.captureId);
-      imported++;
-    }
-
-    // 整理の層。今の DB の状態を読む → 入って来た JSON と統合する（同じ純粋な MERGERS の
-    // 関数）→ 書き戻す。
-    if (orgEntries['folders.json']) {
-      const inc = FoldersSchema.parse(await parseOrgEntry(orgEntries['folders.json']));
-      dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), inc));
-    }
-    if (orgEntries['ungrouped.json']) {
-      const inc = UngroupedSchema.parse(await parseOrgEntry(orgEntries['ungrouped.json']));
-      dbWriter.setUngrouped(mergeUngrouped(dbWriter.getUngrouped(), inc).keys);
-    }
-    if (orgEntries['manual-groups.json']) {
-      const inc = ManualGroupsSchema.parse(await parseOrgEntry(orgEntries['manual-groups.json']));
-      dbWriter.setManualGroups(mergeManualGroups(dbWriter.getManualGroups(), inc).groups);
-    }
-    if (orgEntries['poster-folders.json']) {
-      const inc = PosterFoldersSchema.parse(await parseOrgEntry(orgEntries['poster-folders.json']));
-      dbWriter.setPosterFolders(mergePosterFolders(dbWriter.getPosterFolders(), inc));
-    }
-    if (orgEntries['poster-tags.json']) {
-      const inc = PosterTagNamesSchema.parse(await parseOrgEntry(orgEntries['poster-tags.json']));
-      dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTagNames(), inc));
-    }
-    if (orgEntries['poster-profiles.json']) {
-      const inc = PosterProfilesSchema.parse(await parseOrgEntry(orgEntries['poster-profiles.json']));
-      dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
-    }
-    if (orgEntries['tag-groups.json']) {
-      const inc = TagGroupNamesSchema.parse(await parseOrgEntry(orgEntries['tag-groups.json']));
-      const merged = mergeTagGroups(dbWriter.getTagGroupNames(), inc);
-      // #810: 置き換えるのではなく埋める。mergeTagGroups がすでに衝突をローカル側の勝ちで
-      // 決着させているので、下ではローカルのエントリはどれも何もしないのと同じになり、この
-      // ライブラリが種別を持たない、入って来た名前だけが効く＝名前をキーにする統合からは見え
-      // ない同名の実体も、書き込みで入れ直されずに今の種別を保つ、ということでもある。
-      dbWriter.fillTagGroupsByName(merged.memberships, merged.labels ?? null);
-    }
-    // poster-favorites.json（古い書き出しから来る、MERGERS/ORG_MERGE の旧来のキー）。退役した
-    // 機能を裏付ける DB のテーブルは無い＝在っても黙って落とす。
-
-    // tabs.json は意図してここで取り込まない＝他の端末で開いていたタブを今のセッションへ復元
-    // するのは、既定の振る舞いとして紛らわしい（計画の §2c）。書き出しに残してあるのは、
-    // 完全性と調査のためだけ。
-
-    sqlite.exec('COMMIT');
-  } catch (err) {
-    sqlite.exec('ROLLBACK');
-    throw err;
+  // 整理の層。今の DB の状態を読む → 入って来た JSON と統合する（同じ純粋な MERGERS の
+  // 関数）→ 書き戻す。
+  if (orgEntries['folders.json'] || orgEntries['collections.json']) {
+    // 旧ファイルを先に、現ファイルを後から current 側として統合する。これにより modern format
+    // が衝突時に勝ちつつ、片方にしかない保存済み検索も失わない。
+    const legacy = orgEntries['collections.json'] ? foldersFromArchive(await parseOrgEntry(orgEntries['collections.json'])) : { folders: [], activeId: null };
+    const modern = orgEntries['folders.json'] ? foldersFromArchive(await parseOrgEntry(orgEntries['folders.json'])) : { folders: [], activeId: null };
+    const incoming = mergeFolders(modern, legacy);
+    rememberOrg('folders', incoming);
+    dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), incoming));
+  }
+  if (orgEntries['ungrouped.json']) {
+    const inc = UngroupedSchema.parse(await parseOrgEntry(orgEntries['ungrouped.json']));
+    rememberOrg('ungrouped', inc);
+    dbWriter.setUngrouped(mergeUngrouped(dbWriter.getUngrouped(), inc).keys);
+  }
+  if (orgEntries['manual-groups.json']) {
+    const inc = ManualGroupsSchema.parse(await parseOrgEntry(orgEntries['manual-groups.json']));
+    rememberOrg('manual-groups', inc);
+    dbWriter.setManualGroups(mergeManualGroups(dbWriter.getManualGroups(), inc).groups);
+  }
+  if (orgEntries['poster-folders.json']) {
+    const inc = PosterFoldersSchema.parse(await parseOrgEntry(orgEntries['poster-folders.json']));
+    rememberOrg('poster-folders', inc);
+    dbWriter.setPosterFolders(mergePosterFolders(dbWriter.getPosterFolders(), inc));
+  }
+  if (orgEntries['poster-tags.json']) {
+    const inc = PosterTagNamesSchema.parse(await parseOrgEntry(orgEntries['poster-tags.json']));
+    rememberOrg('poster-tags', inc);
+    dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTagNames(), inc));
+  }
+  if (orgEntries['poster-profiles.json']) {
+    const inc = PosterProfilesSchema.parse(await parseOrgEntry(orgEntries['poster-profiles.json']));
+    rememberOrg('poster-profiles', inc);
+    // 私有の空 DB に投稿から生成した stub より、正規の書庫プロフィールを優先する。
+    dbWriter.setPosterProfiles(mergePosterProfiles(inc, dbWriter.getPosterProfiles()));
+  }
+  if (orgEntries['tag-groups.json']) {
+    const inc = TagGroupNamesSchema.parse(await parseOrgEntry(orgEntries['tag-groups.json']));
+    rememberOrg('tag-groups', inc);
+    const merged = mergeTagGroups(dbWriter.getTagGroupNames(), inc);
+    // #810: 置き換えるのではなく埋める。mergeTagGroups がすでに衝突をローカル側の勝ちで
+    // 決着させているので、下ではローカルのエントリはどれも何もしないのと同じになり、この
+    // ライブラリが種別を持たない、入って来た名前だけが効く＝名前をキーにする統合からは見え
+    // ない同名の実体も、書き込みで入れ直されずに今の種別を保つ、ということでもある。
+    dbWriter.fillTagGroupsByName(merged.memberships, merged.labels ?? null);
   }
 
   return { ok: true as const, notComplete: false as const, imported, skipped };
@@ -822,34 +969,243 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
 // 書庫をレンダラーへ渡さずにそれをやる必要がある＝書き出しと取り込みの経路がすでに従っている
 // 規則 (ADR 0015)。この2つが、アプリで最後に残っていたレンダラー側の ZIP の読み手だった。
 //
-// どちらも呼び出しごとにファイルを開き、呼び出しの間には何も抱えない。うごイラのフレームは
-// 数十枚なので、中央ディレクトリを読み直す方が、IPC の往復をまたいで fd の寿命を持つより安い。
+// 中央ディレクトリは最初の要求で一度だけ検査して索引にする。展開済みフレームは保持せず、要求
+// された1枚だけを yauzl の openReadStream で読む。索引には小さな LRU と未使用時間の上限を設ける。
+// ZipFile は索引走査または1枚の読み取りが終わるたびに閉じるので、Windows でも再生後の元ファイル
+// の置換・削除を妨げない。
 //
 // フレームの名前はキャプチャのフレームの表から来るもので、書庫から来ることは決してない。そこ
 // からパスを組み立てることも一切ない＝open の時点で yauzl の validateFileName をすでに通った
 // エントリ名と突き合わせるだけなので、書庫外のパスを参照しない。
+
+type UgoiraFileIdentity = { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number };
+type UgoiraArchiveIndex = {
+  zipPath: string;
+  identity: UgoiraFileIdentity;
+  entries: Map<string, ZipEntry>;
+  entryCount: number;
+  idleTimer: NodeJS.Timeout | null;
+  leases: number;
+  cached: boolean;
+};
+
+const ugoiraIndexes = new Map<string, UgoiraArchiveIndex>();
+const ugoiraIndexLoads = new Map<string, Promise<UgoiraArchiveIndex>>();
+let ugoiraIndexedEntryCount = 0;
+let ugoiraResidentArchiveCount = 0;
+let ugoiraResidentEntryCount = 0;
+let ugoiraPeakResidentArchiveCount = 0;
+let ugoiraPeakResidentEntryCount = 0;
+let ugoiraEntryVisits = 0;
+let ugoiraOpenHandles = 0;
+let ugoiraPeakOpenHandles = 0;
+const ugoiraHandleWaiters: Array<() => void> = [];
+const ugoiraResidentWaiters: Array<() => void> = [];
+let ugoiraBeforeReadHandleSlotForTest: (() => Promise<void>) | null = null;
+
+function identityOf(stat: fs.Stats): UgoiraFileIdentity {
+  return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
+}
+
+function sameIdentity(a: UgoiraFileIdentity, b: UgoiraFileIdentity) {
+  return a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
+}
+
+async function withUgoiraHandleSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (ugoiraOpenHandles >= MAX_UGOIRA_OPEN_ARCHIVES) await new Promise<void>((resolve) => ugoiraHandleWaiters.push(resolve));
+  else ugoiraOpenHandles++;
+  ugoiraPeakOpenHandles = Math.max(ugoiraPeakOpenHandles, ugoiraOpenHandles);
+  try {
+    return await fn();
+  } finally {
+    const next = ugoiraHandleWaiters.shift();
+    if (next) next();
+    else ugoiraOpenHandles--;
+  }
+}
+
+function closeZipReader(zipfile: ZipReader): Promise<void> {
+  if (!zipfile.isOpen) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    zipfile.once('close', resolve);
+    zipfile.once('error', reject);
+    zipfile.close();
+  });
+}
+
+function discardUgoiraIndex(index: UgoiraArchiveIndex) {
+  if (ugoiraIndexes.get(index.zipPath) === index) {
+    ugoiraIndexes.delete(index.zipPath);
+    ugoiraIndexedEntryCount -= index.entryCount;
+    index.cached = false;
+  }
+  if (index.idleTimer) clearTimeout(index.idleTimer);
+  index.idleTimer = null;
+  releaseUgoiraResidence(index);
+}
+
+function touchUgoiraIndex(index: UgoiraArchiveIndex) {
+  if (ugoiraIndexes.get(index.zipPath) !== index || !index.cached) return;
+  if (index.idleTimer) clearTimeout(index.idleTimer);
+  ugoiraIndexes.delete(index.zipPath);
+  ugoiraIndexes.set(index.zipPath, index); // Map の挿入順を LRU として使う
+  index.idleTimer = setTimeout(() => discardUgoiraIndex(index), UGOIRA_INDEX_IDLE_MS);
+  index.idleTimer.unref();
+}
+
+function evictUgoiraIndexesForResidence(incomingEntries: number) {
+  while (ugoiraIndexes.size && (ugoiraResidentArchiveCount >= MAX_UGOIRA_OPEN_ARCHIVES || ugoiraResidentEntryCount + incomingEntries > MAX_UGOIRA_INDEXED_ENTRIES)) {
+    const oldest = ugoiraIndexes.values().next().value as UgoiraArchiveIndex | undefined;
+    if (!oldest) break;
+    discardUgoiraIndex(oldest);
+  }
+}
+
+async function reserveUgoiraResidence(entryCount: number) {
+  if (entryCount > MAX_UGOIRA_INDEXED_ENTRIES) throw new ZipLimitError('archive declares ' + entryCount + ' entries (> cap ' + MAX_UGOIRA_INDEXED_ENTRIES + ')');
+  for (;;) {
+    evictUgoiraIndexesForResidence(entryCount);
+    if (ugoiraResidentArchiveCount < MAX_UGOIRA_OPEN_ARCHIVES && ugoiraResidentEntryCount + entryCount <= MAX_UGOIRA_INDEXED_ENTRIES) {
+      ugoiraResidentArchiveCount++;
+      ugoiraResidentEntryCount += entryCount;
+      ugoiraPeakResidentArchiveCount = Math.max(ugoiraPeakResidentArchiveCount, ugoiraResidentArchiveCount);
+      ugoiraPeakResidentEntryCount = Math.max(ugoiraPeakResidentEntryCount, ugoiraResidentEntryCount);
+      return;
+    }
+    await new Promise<void>((resolve) => ugoiraResidentWaiters.push(resolve));
+  }
+}
+
+function releaseUgoiraResidence(index: UgoiraArchiveIndex) {
+  if (index.cached || index.leases > 0) return;
+  ugoiraResidentArchiveCount--;
+  ugoiraResidentEntryCount -= index.entryCount;
+  for (const wake of ugoiraResidentWaiters.splice(0)) wake();
+}
+
+function leaseUgoiraIndex(index: UgoiraArchiveIndex) {
+  index.leases++;
+  let released = false;
+  return {
+    index,
+    release() {
+      if (released) return;
+      released = true;
+      index.leases--;
+      releaseUgoiraResidence(index);
+    },
+  };
+}
+
+async function buildUgoiraIndex(zipPath: string): Promise<UgoiraArchiveIndex> {
+  let reservedEntryCount = 0;
+  let reserved = false;
+  let built: Pick<UgoiraArchiveIndex, 'identity' | 'entries' | 'entryCount'>;
+  try {
+    // yauzl.open が EOCD を読み終えた時点で entryCount は確定している。ここでは中央ディレクトリを
+    // 列挙せず、件数と同一性だけを有限量読んで FD を閉じる。resident 枠の待機中に FD 枠を握ると、
+    // lease を持って FD 枠を待つ read と循環するため、容量予約は必ずこの close より後で行う。
+    const probe = await withUgoiraHandleSlot(async () => {
+      const before = identityOf(await fs.promises.stat(zipPath));
+      const zipfile = await openZipForRead(zipPath, { autoClose: false });
+      try {
+        declaredSizeTally(zipfile);
+        const after = identityOf(await fs.promises.stat(zipPath));
+        if (!sameIdentity(before, after)) throw new Error('ugoira archive changed while probing');
+        return { identity: after, entryCount: zipfile.entryCount };
+      } finally {
+        await closeZipReader(zipfile);
+      }
+    });
+    await reserveUgoiraResidence(probe.entryCount);
+    reserved = true;
+    reservedEntryCount = probe.entryCount;
+
+    built = await withUgoiraHandleSlot(async () => {
+      const before = identityOf(await fs.promises.stat(zipPath));
+      if (!sameIdentity(probe.identity, before)) throw new Error('ugoira archive changed before indexing');
+      const zipfile = await openZipForRead(zipPath, { autoClose: false });
+      try {
+        const tally = declaredSizeTally(zipfile);
+        if (zipfile.entryCount !== probe.entryCount) throw new Error('ugoira archive changed before indexing');
+        const entries = new Map<string, ZipEntry>();
+        for await (const entry of zipfile.eachEntry()) {
+          ugoiraEntryVisits++;
+          if (entry.fileName.endsWith('/')) continue;
+          tally(entry.fileName, entry);
+          entries.set(entry.fileName, entry);
+        }
+        const after = identityOf(await fs.promises.stat(zipPath));
+        if (!sameIdentity(before, after)) throw new Error('ugoira archive changed while indexing');
+        return { identity: after, entries, entryCount: zipfile.entryCount };
+      } finally {
+        await closeZipReader(zipfile);
+      }
+    });
+  } catch (err) {
+    if (reserved) {
+      ugoiraResidentArchiveCount--;
+      ugoiraResidentEntryCount -= reservedEntryCount;
+      for (const wake of ugoiraResidentWaiters.splice(0)) wake();
+    }
+    throw err;
+  }
+  const index: UgoiraArchiveIndex = { zipPath, ...built, idleTimer: null, leases: 0, cached: true };
+  ugoiraIndexes.set(zipPath, index);
+  ugoiraIndexedEntryCount += index.entryCount;
+  touchUgoiraIndex(index);
+  return index;
+}
+
+async function acquireUgoiraIndex(zipPath: string) {
+  const current = ugoiraIndexes.get(zipPath);
+  if (current) {
+    const identity = identityOf(await fs.promises.stat(zipPath));
+    if (ugoiraIndexes.get(zipPath) !== current || !current.cached) return acquireUgoiraIndex(zipPath);
+    if (sameIdentity(current.identity, identity)) {
+      touchUgoiraIndex(current);
+      return leaseUgoiraIndex(current);
+    }
+    discardUgoiraIndex(current);
+  }
+  let loading = ugoiraIndexLoads.get(zipPath);
+  if (!loading) {
+    loading = buildUgoiraIndex(zipPath);
+    ugoiraIndexLoads.set(zipPath, loading);
+    void loading.finally(() => ugoiraIndexLoads.delete(zipPath)).catch(() => {});
+  }
+  const index = await loading;
+  // 最初の待ち手が lease を取ってから resident 待ちを起こす。公開直後に起こすと、この acquire
+  // 自身が再開する前に索引を evict され、同じ中央ディレクトリを作り直してしまう。
+  if (ugoiraIndexes.get(zipPath) !== index && index.leases === 0) return acquireUgoiraIndex(zipPath);
+  if (index.cached) touchUgoiraIndex(index);
+  const lease = leaseUgoiraIndex(index);
+  for (const wake of ugoiraResidentWaiters.splice(0)) wake();
+  return lease;
+}
+
+function openFdForRead(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => fs.open(filePath, 'r', (err, fd) => (err ? reject(err) : resolve(fd))));
+}
+
+function fstatFd(fd: number): Promise<fs.Stats> {
+  return new Promise((resolve, reject) => fs.fstat(fd, (err, stat) => (err ? reject(err) : resolve(stat))));
+}
+
+function closeFd(fd: number): Promise<void> {
+  return new Promise((resolve, reject) => fs.close(fd, (err) => (err ? reject(err) : resolve())));
+}
 
 // フレームの表が求める名前が全部、書庫の中に在るときだけ true。全部か無しかで答えるのが要
 // ＝一部だけ一致するということは、表と書庫がもう同じアニメーションを記述していないという
 // こと。黙って並びの変わったアニメーションは、ポスターより悪い (#474)。
 async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<boolean> {
   if (!Array.isArray(names) || !names.length) return false;
-  const zipfile = await openZipForRead(zipPath, { autoClose: false });
+  const lease = await acquireUgoiraIndex(zipPath);
   try {
-    const tally = declaredSizeTally(zipfile);
-    const wanted = new Set(names);
-    for await (const entry of zipfile.eachEntry()) {
-      if (entry.fileName.endsWith('/')) continue; // directory entry (yauzl's only marker)
-      tally(entry.fileName, entry);
-      wanted.delete(entry.fileName);
-    }
-    return wanted.size === 0;
+    return names.every((name) => lease.index.entries.has(name));
   } finally {
-    try {
-      zipfile.close();
-    } catch {
-      /* エラーの経路がすでに閉じている */
-    }
+    lease.release();
   }
 }
 
@@ -858,26 +1214,66 @@ async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<bo
 // 同じ上限で切るので、嘘をついた中央ディレクトリは何も得しない。
 async function readUgoiraFrame(zipPath: string, name: string): Promise<Buffer | null> {
   if (!name) return null;
-  const zipfile = await openZipForRead(zipPath, { autoClose: false });
+  const lease = await acquireUgoiraIndex(zipPath);
+  const index = lease.index;
   try {
-    const tally = declaredSizeTally(zipfile);
-    let found: ZipEntry | null = null;
-    for await (const entry of zipfile.eachEntry()) {
-      if (entry.fileName.endsWith('/')) continue;
-      tally(entry.fileName, entry);
-      if (entry.fileName === name) found = entry;
-    }
+    const found = index.entries.get(name);
     if (!found) return null;
     const declared = entryUncompressedSize(found);
     if (declared > MAX_UGOIRA_FRAME_BYTES) throw new ZipLimitError('ugoira frame "' + name + '" declares ' + declared + ' bytes (> frame cap ' + MAX_UGOIRA_FRAME_BYTES + ')');
-    return await readStreamCapped(await zipfile.openReadStreamPromise(found), MAX_UGOIRA_FRAME_BYTES);
+    if (ugoiraBeforeReadHandleSlotForTest) await ugoiraBeforeReadHandleSlotForTest();
+    return await withUgoiraHandleSlot(async () => {
+      const fd = await openFdForRead(zipPath);
+      let zipfile: ZipReader | null = null;
+      try {
+        if (!sameIdentity(index.identity, identityOf(await fstatFd(fd)))) throw new Error('ugoira archive changed before reading');
+        zipfile = await openZipFdForRead(fd, { autoClose: false });
+        const bytes = await readStreamCapped(await zipfile.openReadStreamPromise(found), MAX_UGOIRA_FRAME_BYTES);
+        if (!sameIdentity(index.identity, identityOf(await fstatFd(fd))) || !sameIdentity(index.identity, identityOf(await fs.promises.stat(zipPath)))) {
+          throw new Error('ugoira archive changed while reading');
+        }
+        return bytes;
+      } catch (err) {
+        // ファイル変更、局所ヘッダや圧縮データの破損、読み取りエラーのどれでも、同じ Entry を
+        // 次の要求へ使い回さない。FD の解放は下の finally が先に完了させる。
+        discardUgoiraIndex(index);
+        throw err;
+      } finally {
+        if (zipfile) await closeZipReader(zipfile);
+        else await closeFd(fd);
+      }
+    });
   } finally {
-    try {
-      zipfile.close();
-    } catch {
-      /* エラーの経路がすでに閉じている */
-    }
+    lease.release();
   }
+}
+
+// 回帰テストと診断用。実データや Entry は外へ出さず、中央ディレクトリの走査量だけを公開する。
+function ugoiraArchiveIndexStats() {
+  return {
+    cachedArchives: ugoiraIndexes.size,
+    indexedEntries: ugoiraIndexedEntryCount,
+    residentArchives: ugoiraResidentArchiveCount,
+    residentEntries: ugoiraResidentEntryCount,
+    peakResidentArchives: ugoiraPeakResidentArchiveCount,
+    peakResidentEntries: ugoiraPeakResidentEntryCount,
+    residentWaiters: ugoiraResidentWaiters.length,
+    entryVisits: ugoiraEntryVisits,
+    openHandles: ugoiraOpenHandles,
+    peakOpenHandles: ugoiraPeakOpenHandles,
+  };
+}
+
+function setUgoiraBeforeReadHandleSlotForTest(hook: (() => Promise<void>) | null) {
+  ugoiraBeforeReadHandleSlotForTest = hook;
+}
+
+function clearUgoiraArchiveIndexes() {
+  for (const index of [...ugoiraIndexes.values()]) discardUgoiraIndex(index);
+  ugoiraEntryVisits = 0;
+  ugoiraPeakOpenHandles = ugoiraOpenHandles;
+  ugoiraPeakResidentArchiveCount = ugoiraResidentArchiveCount;
+  ugoiraPeakResidentEntryCount = ugoiraResidentEntryCount;
 }
 
 export {
@@ -887,16 +1283,24 @@ export {
   MAX_ZIP_ENTRY_BYTES,
   MAX_ZIP_TOTAL_BYTES,
   MAX_ZIP_ORG_BYTES,
+  MAX_ZIP_CAPTURE_JSON_BYTES,
   MAX_UGOIRA_FRAME_BYTES,
+  MAX_UGOIRA_OPEN_ARCHIVES,
+  MAX_UGOIRA_INDEXED_ENTRIES,
   ZipLimitError,
   writeStreamCapped,
   readStreamCapped,
+  prepareCompleteExport,
   writeCompleteZip,
   writeImagesZip,
   hasExportableFiles,
-  importCompleteZipToDb,
+  hasCompleteExportContent,
+  prepareZipIntoEmptyDatabase,
   ugoiraFramesPresent,
   readUgoiraFrame,
+  ugoiraArchiveIndexStats,
+  clearUgoiraArchiveIndexes,
+  setUgoiraBeforeReadHandleSlotForTest,
   mergeFolders,
   mergePosterFolders,
   mergeTagGroups,

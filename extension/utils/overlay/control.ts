@@ -1,10 +1,10 @@
 import { mediaKeysOf } from '../extractor/index.ts';
 // 隅の面: host 要素自身の shadow で隔離された箱（#310）、その中に描くディ
-// スク、そしてある瞬間にどの面（mark/save/failed）が求められている
+// スク、そしてある瞬間にどの面（mark/save/busy/failed）が求められている
 // か。#399 で overlay.ts から分離した。スクロール、保存状態のまとめ処理、
 // 保存のネットワーク呼び出し自体については何も知らない＝呼び出し元が何
 // を表示するかと、押せる2つの面のためのコールバックを2つ渡す。
-import { ICONS, makeIcon } from '../icons.ts';
+import { ICONS, makeIcon, makeSpinner } from '../icons.ts';
 import type { MediaIdentitySite } from '../extractor/types.ts';
 import { markUiLanguage } from '../locale.ts';
 import { userOnly } from '../user-gesture.ts';
@@ -14,11 +14,10 @@ import { postSavedState } from './saved-state.ts';
 import type { Anchor, Face, MarkMode, UnitState } from './types.ts';
 import { CONTROL_SIZE } from './constants.ts';
 
-// shadow の host。ハイフン入りの名前があるからこそ、HTML パーサーが聞い
-// たこともない要素で attachShadow が合法になる。そしてこれは、ホスト
-// ページがこちらを対象にしようとするなら書かなければならない名前でもあ
-// る。
-export const CONTROL_TAG = 'hologram-corner-control';
+// shadow の host は組み込み要素にする。独自要素名はページが先に
+// customElements.define() し、constructor で root の参照を保持できるため、
+// 履歴を置く closed tree の所有者にはできない。
+export const CONTROL_TAG = 'span';
 // host 要素自身の箱＝この操作のうちページのカスケードがまだ届く唯一の
 // 部分なので、すべての宣言はインライン !important にしてある（作者側の
 // スタイルシートが書けるものでこれに勝てるものはない）。`all: initial`
@@ -32,7 +31,10 @@ export const CONTROL_HOST_STYLE: Array<[string, string]> = [
   ['display', 'block'],
   ['width', `${CONTROL_SIZE}px`],
   ['height', `${CONTROL_SIZE}px`],
-  ['pointer-events', 'auto'],
+  // host は全状態で hit testing の対象外。可視ボタンの pointer 入力は
+  // overlay.ts が座標から委譲し、空の面ではブラウザ本来の target と
+  // trusted event を一切作り直さずそのまま通す。
+  ['pointer-events', 'none'],
   // 画像より上、ページが意図して上げるものより下: これは他人のコンテン
   // ツへの注釈であって、その上に乗るレイヤーではない。
   ['z-index', '1'],
@@ -76,7 +78,7 @@ export interface FaceContext {
 
 export function faceFor(ctx: FaceContext): Face | null {
   const { state, anchor, rect, markMode, hoverSave, hoveredAnchor, media } = ctx;
-  if (anchor.phase === 'saving') return null;
+  if (anchor.phase === 'saving') return 'busy';
   if (anchor.phase === 'error') return 'failed';
   if (anchor.phase === 'flash') return 'mark';
   const item = anchor.kind === 'media' ? postMediaIn(anchor.box) : null;
@@ -98,27 +100,35 @@ export function faceFor(ctx: FaceContext): Face | null {
 }
 
 // ページ側の host 要素と、その面を描く場所。shadow root が隔離の仕組み
-// で、host 要素自身へのフォールバックは、このファイルの残りが従うのと
-// 同じ「スタイルなしの操作でも画像は保存できる」というルールに従ってい
-// る＝attachShadow が失敗するのは document がそもそもそれを持てない場
-// 合だけで、そこで保存を失うのは境界を失うよりはるかに悪い取引だ。
-export function makeControlHost(): { el: HTMLElement; root: ShadowRoot | HTMLElement } {
+// だが、ページと共有される host 自身は下記の通り状態非依存に保つ。
+export function makeControlHost(): { el: HTMLElement; root: ShadowRoot } {
   const el = document.createElement(CONTROL_TAG);
   for (const [property, value] of CONTROL_HOST_STYLE) el.style.setProperty(property, value, 'important');
   el.setAttribute('data-hologram-overlay', '');
-  // 3つの面はアクセシブルな名前以外の何物でもない（下の drawFace を参
+  // 4つの面はアクセシブルな名前以外の何物でもない（下の drawFace を参
   // 照＝24pxのディスクは誰に対しても視覚的には何も説明しない）ので、
   // ページ自身の `lang` がそこへ届くかどうかが、それらが何語で読み上げ
   // られるかを決める（#1057）。上の `all: initial` はここでは助けにな
   // らない: 言語はカスケードではなく DOM 上で確定するものだからだ。
   markUiLanguage(el);
-  let root: ShadowRoot | HTMLElement = el;
-  try {
-    root = el.attachShadow({ mode: 'open' });
-  } catch {
-    /* 理由は上を参照 */
-  }
+  // open root はページのスクリプトに保存済みかどうかをそのまま公開する。
+  // closed は単独では境界にならない（host の有無や箱が変われば同じこと）
+  // なので、呼び出し側は面がない時も同じ host を保持する。標準要素で
+  // attachShadow が失敗する環境に、安全でない light DOM の代替は作らない。
+  const root = el.attachShadow({ mode: 'closed' });
   return { el, root };
+}
+
+// 面がない時にも、同じ大きさ・同じ hit testing の shadow 内部を置く。
+// これによって elementFromPoint やページ側のイベント監視も、履歴の答え
+// によって host と投稿本体の間を行き来しない。closed tree 内なので、この
+// 属性や子要素はページの DOM API からは読めない。
+export function drawEmptyFace(anchor: Anchor): void {
+  const el = document.createElement('div');
+  el.setAttribute('aria-hidden', 'true');
+  el.style.cssText = `width:${CONTROL_SIZE}px;height:${CONTROL_SIZE}px`;
+  anchor.root?.replaceChildren(el);
+  anchor.control = el;
 }
 
 // ディスクそのもの、shadow root の中。スタイルシートではなくインライン
@@ -195,10 +205,12 @@ export interface DrawFaceCallbacks {
 // だ）。
 export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string, callbacks: DrawFaceCallbacks): void {
   const pressable = isPressable(face);
-  // 保存済み・save・retry は操作用ボタン。保存中は表示しない。
+  // busy はステータス表示で、保存済み・save・retry は操作用ボタン。
   // 状態に応じて要素を作り直し、ブラウザ標準のボタン操作を使う。
   let el = anchor.control;
+  el?.getAnimations?.({ subtree: true }).forEach((animation) => animation.cancel());
   if (!el || el instanceof HTMLButtonElement !== pressable) el = makeControl(anchor, pressable);
+  el.setAttribute('data-hologram-face', face);
   el.replaceChildren();
   el.onclick = null;
   el.onpointerdown = null;
@@ -269,6 +281,14 @@ export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string,
       });
       break;
     }
+    case 'busy': {
+      name = t('cornerSaving');
+      const spinner = makeSpinner(14);
+      el.appendChild(spinner);
+      // Shadow DOM 内では共通CSSが届かないため、Web Animations APIで回す。
+      spinner.animate([{ transform: 'rotate(0turn)' }, { transform: 'rotate(1turn)' }], { duration: 900, iterations: Infinity, easing: 'linear' });
+      break;
+    }
     case 'failed':
       // 失敗は行き止まりではない: もう一度押せばすぐに再試行し、放って
       // おけば自分から普通のボタンへ戻る。
@@ -287,6 +307,7 @@ export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string,
 }
 
 export function removeControl(anchor: Anchor): void {
+  anchor.control?.getAnimations?.({ subtree: true }).forEach((animation) => animation.cancel());
   anchor.el?.remove();
   anchor.el = null;
   anchor.root = null;

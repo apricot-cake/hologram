@@ -113,7 +113,13 @@ export interface IpcContext {
   getExportReminder(): ExportReminderState;
   setExportReminderEnabled(enabled: unknown): ExportReminderState;
   setExportReminderThreshold(threshold: unknown): ExportReminderState;
-  markExported(): ExportReminderState;
+  beginCompleteExport(): CompleteExportWatermark;
+  markExported(watermark: CompleteExportWatermark): ExportReminderState;
+  getDbForCompleteExport(owner: number): DbHandle;
+  importCompleteArchive(zipPath: string, folder: string): Promise<import('./ipc-payloads').CompleteImportResult>;
+  reserveCompleteExport(): number | null;
+  pauseCompleteExport(owner: number): Promise<number | null>;
+  finishCompleteExport(owner: number): Promise<void>;
   /** 新しく保存された投稿だけをエクスポート通知へ加算する。編集、削除、復元には使わない。 */
   notePostsSaved(count: number): ExportReminderState;
   armRecoverySchedule(): void;
@@ -129,7 +135,14 @@ export interface IpcContext {
   /** #176: getSaveFolder() が今解決する先で DB を開く（または作成する）。 */
   openDb(): void;
   /** 取込キューのウォッチャーを現在の保存フォルダへ向け直す。 */
-  watchInboxFolder(): void;
+  watchInboxFolder(): Promise<void>;
+  /** 移動中の読み取りと inbox 監視を停止する。 */
+  pauseLibraryRelocation(): Promise<number | null>;
+  /** 現在設定された側の inbox を drain し、監視・差分・更新通知を復旧する。 */
+  finishLibraryRelocation(owner: number): Promise<void>;
+  /** owner だけが移動中に DB を閉じ、切替先を開ける。 */
+  closeDbForLibraryRelocation(owner: number): void;
+  openDbForLibraryRelocation(owner: number): void;
   /** すべての送信元の差分基準を捨てる（#32 St1: 今は Map）ので、すべてのウィンドウが全同期する。 */
   resetDelta(): void;
 
@@ -159,4 +172,10 @@ export interface IpcContext {
   isPrimarySender(webContentsId: number): boolean;
   /** 新しい副ウィンドウを開く（Ctrl+Shift+N ／2回目の起動の入り口、#32 St1）。 */
   openNewWindow(): void;
+}
+
+export interface CompleteExportWatermark {
+  readonly library: string;
+  readonly epoch: number;
+  readonly generation: number;
 }

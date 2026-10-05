@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { asUser } from '../helpers/lib-user-event.ts';
 import { parsePostLink } from '../../app/src/shared/post-link.ts';
 
@@ -156,6 +156,15 @@ const X_HTML = `<!doctype html><html><body>
 // （ページ自身の <script> は動かないまま。どのみちフィクスチャには無い）
 const dom = new JSDOM(X_HTML, { url: 'https://x.com/home', runScripts: 'outside-only' });
 const { window } = dom;
+// production は closed ShadowRoot を使う。テストだけは attachShadow の返り値を
+// WeakMap に控え、ページからは実際と同じく host.shadowRoot === null のままにする。
+const closedRoots = new WeakMap<Element, ShadowRoot>();
+const nativeAttachShadow = window.Element.prototype.attachShadow;
+window.Element.prototype.attachShadow = function (init: ShadowRootInit) {
+  const root = nativeAttachShadow.call(this, init);
+  if (init.mode === 'closed') closedRoots.set(this, root);
+  return root;
+};
 const openWindow = vi.spyOn(window, 'open').mockImplementation(() => null);
 // 現行ブラウザが備える scrollend を明示する。jsdom はこのイベントを
 // 実装していないため、テストが完了時点を手で通知する。
@@ -187,18 +196,19 @@ const setSetting = (key: string, value: unknown) => {
 
 // 小さなコントロールは投稿の部分木に留まる（#44 でも固定の層へは移していない。移すと
 // スクロール追従とホスト側の重なり順が壊れるため）。だから素の document からそのまま拾える。
-// 拾えるのはホスト要素 `<hologram-corner-control>` で、丸そのものはその ShadowRoot の中に
-// いる（#310＝部分木に留まったまま、ホストの CSS からは隔離する）。
-const controls = (): any[] => Array.from(window.document.querySelectorAll('[data-hologram-overlay]'));
+// 拾えるのは状態非依存のホスト要素だけで、丸そのものは closed ShadowRoot の中に
+// いる（#310＝部分木に留まったまま、ホストの CSS とページ JS からは隔離する）。
+const controlHosts = (): any[] => Array.from(window.document.querySelectorAll('[data-hologram-overlay]'));
 // ホスト要素から丸へ。見た目・タブ順・アクセシブル名を見るテストは、すべてこちら側を通る。
-const disc = (el: any): any => el?.shadowRoot?.firstElementChild ?? el;
+const disc = (el: any): any => (el?.shadowRoot || closedRoots.get(el))?.firstElementChild ?? el;
+const controls = (): any[] => controlHosts().filter((el) => disc(el).hasAttribute('data-hologram-face'));
 const labelOf = (el: any): string | null => disc(el)?.getAttribute('aria-label');
 // 一方、失敗を知らせる上部のバナーは共有の ShadowRoot（ui-root.ts）にいる。
 const saveBanners = (): any[] => Array.from((window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot?.querySelectorAll('[data-hologram-save-banner]') || []);
-// 顔はホスト要素の data-hologram-face（#310）で見分ける＝訳された文言に頼らずに「どの顔か」
-// を聞ける。文言そのものは別のテストが見る。
-const marks = () => controls().filter((el) => el.getAttribute('data-hologram-face') === 'mark');
-const saveButtons = () => controls().filter((el) => el.getAttribute('data-hologram-face') === 'save');
+// テストが控えた closed root 内の data-hologram-face で見分ける。production のページ JS は
+// この属性へ到達できない。文言そのものは別のテストが見る。
+const marks = () => controls().filter((el) => disc(el).getAttribute('data-hologram-face') === 'mark');
+const saveButtons = () => controls().filter((el) => disc(el).getAttribute('data-hologram-face') === 'save');
 // overlay.ts は「これは保存済みか」の問い合わせを QUERY_DEBOUNCE_MS（300）の裏でまとめる。
 // そのタイマーが鳴るまでは何も送られておらず、観測できるものも無い。400 はその数字に余裕を
 // 足したもの。両方のタイマーは本物で同じ時計に積まれるので、負荷の高い機械では揃って遅れる
@@ -322,9 +332,10 @@ beforeAll(async () => {
           const list = Array.isArray(keys) ? keys : [keys];
           const out: Record<string, unknown> = {};
           for (const k of list) out[k] = storage[k];
-          cb(out);
+          cb?.(out);
+          return Promise.resolve(out);
         },
-        set: (obj: object) => Object.assign(storage, obj),
+        set: (obj: object) => Promise.resolve(Object.assign(storage, obj)),
       },
       onChanged: { addListener: (fn: any) => storageListeners.push(fn) },
     },
@@ -339,6 +350,19 @@ test('常駐開始を通知し、メニューの問い合わせに応答する',
   const replies: unknown[] = [];
   for (const listener of runtimeListeners) listener({ type: 'getHoverSaveStatus' }, {}, (reply: unknown) => replies.push(reply));
   expect(replies).toEqual([{ hoverSave: true, platform: 'x' }]);
+});
+
+test('共有 window の偽装 ErrorEvent を診断として転送しない', async () => {
+  const before = sent.length;
+  window.dispatchEvent(
+    new window.ErrorEvent('error', {
+      message: 'forged page error',
+      filename: 'chrome-extension://abcdefghijklmnop/content-scripts/resident.js',
+      error: { stack: 'Error: forged\n at chrome-extension://abcdefghijklmnop/content-scripts/resident.js:1:1' },
+    }),
+  );
+  await settle();
+  expect(sent.slice(before).some((message) => message.type === 'logCapture')).toBe(false);
 });
 
 test('初回走査で全ての投稿が観測される', () => {
@@ -372,8 +396,11 @@ describe('savedBadgeMode の三値', () => {
   });
 
   test('hover へ切り替えると常時の印は消える', () => {
+    const hosts = controlHosts();
     setSetting('savedBadgeMode', 'hover');
     expect(controls()).toHaveLength(0);
+    expect(controlHosts()).toEqual(hosts);
+    expect(hosts.every((host) => host.shadowRoot === null && !host.hasAttribute('data-hologram-face'))).toBe(true);
   });
 
   test('保存済みの投稿にポインタを乗せると印が出る', () => {
@@ -388,8 +415,8 @@ describe('savedBadgeMode の三値', () => {
     expect((boxOf('p1') as any).style.position).toBe('relative');
   });
 
-  test('コントロールは操作可能（pointer-events を殺していない）', () => {
-    expect((marks()[0] as any).style.pointerEvents).not.toBe('none');
+  test('コントロールの host は状態によらず hit testing をページへ通す', () => {
+    expect((marks()[0] as any).style.pointerEvents).toBe('none');
   });
 
   test('保存済みの印はキーボードでも押せるボタンになる', () => {
@@ -420,9 +447,9 @@ describe('savedBadgeMode の三値', () => {
   // いて、ページ自身の CSS セレクタは届かない。その境界そのものを数値で見るのは
   // e2e-extension-hostile-css の担当。
   test('円はホスト要素の ShadowRoot の中にある', () => {
-    expect(marks()[0].tagName.toLowerCase()).toBe('hologram-corner-control');
-    expect(marks()[0].shadowRoot).toBeTruthy();
-    expect(disc(marks()[0]).parentNode).toBe(marks()[0].shadowRoot);
+    expect(marks()[0].tagName).toBe('SPAN');
+    expect(marks()[0].shadowRoot).toBeNull();
+    expect(disc(marks()[0]).parentNode).toBe(closedRoots.get(marks()[0]));
   });
 
   // #1057 (WCAG 2.2 SC 3.1.2): この操作子は読み上げ名しか持たない（上のテストの
@@ -445,7 +472,14 @@ describe('スクロール中の追従（#347）', () => {
 
     expect(marks()[0]?.parentElement).toBe(boxOf('p1'));
     expect(marks()[0].style.top).toBe('6px');
-    expect(animationFrames.size).toBe(0);
+    // スクロールで変わるのは操作面の hover。公開 host の配置はブラウザの
+    // 合成に任せ、再評価のフレームでも top を書き換えない。
+    const hostStyle = marks()[0].getAttribute('style');
+    const frames = [...animationFrames];
+    animationFrames.clear();
+    for (const [, callback] of frames) callback(0);
+    expect(marks()[0].getAttribute('style')).toBe(hostStyle);
+    expect(marks()[0].style.top).toBe('6px');
   });
 
   test('ホバー中の絵の中でスクロールしてもコントロールは残る', async () => {
@@ -632,12 +666,21 @@ describe('保存ボタン', () => {
       save = sent.at(-1);
     });
 
-    test('保存中はボタンを消し、ホバーし直しても表示しない', () => {
+    test('保存中は押せないスピナーを表示し、ホバーし直しても保持する', () => {
       try {
-        expect(controls()).toHaveLength(0);
+        expect(saveButtons()).toHaveLength(0);
+        const busy = controls().find((el: any) => disc(el).dataset.hologramFace === 'busy');
+        expect(busy).toBeDefined();
+        expect(disc(busy).tagName).toBe('DIV');
+        expect(disc(busy).getAttribute('aria-label')).toBe('Saving');
+        const spinner = disc(busy).querySelector('.spinner');
+        expect(animationCalls.get(spinner)).toMatchObject({ options: { duration: 900, iterations: Infinity, easing: 'linear' } });
+        const before = sent.length;
+        click(busy);
+        expect(sent).toHaveLength(before);
         hoverAway();
         hover('p2');
-        expect(controls()).toHaveLength(0);
+        expect(controls().find((el: any) => disc(el).dataset.hologramFace === 'busy')).toBe(busy);
       } finally {
         deferSaveReply = false;
         pendingSaveReply?.(saveReply);
@@ -824,7 +867,7 @@ describe('複数画像の個別保存', () => {
     const unit = window.document.getElementById('p4');
     const parent = unit.parentElement;
     const fresh = unit.cloneNode(true) as HTMLElement;
-    fresh.querySelectorAll('hologram-corner-control').forEach((control) => control.remove());
+    fresh.querySelectorAll('[data-hologram-overlay]').forEach((control) => control.remove());
     unit.remove();
     await settle();
     parent.append(fresh);
@@ -939,11 +982,34 @@ test('同じタブの別経路で保存されたら、スクロールを待た�
 describe('ボタンを切っても印は残る', () => {
   beforeAll(() => setSetting('hoverSaveButton', false));
 
-  test('ボタン off では未保存の絵に何も出さない', async () => {
-    hover('p6');
+  test('可視の面がない host はページの trusted event と修飾キーを遮らない', async () => {
+    setSetting('savedBadgeMode', 'off');
+    hover('p1');
     await settle();
 
-    expect(controls()).toHaveLength(0);
+    const host = controlHosts().find((candidate) => candidate.parentElement === boxOf('p1'));
+    expect(host).toBeDefined();
+    expect(disc(host).hasAttribute('data-hologram-face')).toBe(false);
+    expect(host.style.pointerEvents).toBe('none');
+
+    const underlying = window.document.createElement('button');
+    const received: MouseEvent[] = [];
+    underlying.onclick = (event) => {
+      received.push(event);
+    };
+    window.document.body.appendChild(underlying);
+    try {
+      underlying.dispatchEvent(asUser(new window.MouseEvent('click', { bubbles: true, ctrlKey: true, button: 0 })));
+      expect(received).toHaveLength(1);
+      expect(received[0].ctrlKey).toBe(true);
+      expect(received[0].button).toBe(0);
+      expect(received[0].isTrusted).toBe(true);
+      expect(host.style.pointerEvents).toBe('none');
+      expect(disc(host).hasAttribute('data-hologram-face')).toBe(false);
+    } finally {
+      underlying.remove();
+      setSetting('savedBadgeMode', 'hover');
+    }
     hoverAway();
   });
 
@@ -1208,7 +1274,7 @@ describe('テキストのみの投稿（#575）', () => {
 
     // 見るのは p14 自身の箱だけ（controls() は他の投稿の一時的な face='flash' も拾ってしまう）。
     expect(controlOf('p14')).toHaveLength(1);
-    expect(controlOf('p14')[0].getAttribute('data-hologram-face')).toBe('save');
+    expect(disc(controlOf('p14')[0]).getAttribute('data-hologram-face')).toBe('save');
     expect(labelOf(controlOf('p14')[0])).toBe('Save post');
     hoverAway();
   });
@@ -1224,7 +1290,7 @@ describe('テキストのみの投稿（#575）', () => {
 
     const p14Controls = controlOf('p14');
     expect(p14Controls).toHaveLength(1);
-    expect(p14Controls[0].getAttribute('data-hologram-face')).toBe('mark');
+    expect(disc(p14Controls[0]).getAttribute('data-hologram-face')).toBe('mark');
     expect(labelOf(p14Controls[0])).toBe('Open saved post in Hologram');
   });
 
@@ -1240,7 +1306,7 @@ describe('テキストのみの投稿（#575）', () => {
   });
 
   test('テキスト投稿の保存ボタンも操作できる', () => {
-    expect(controlOf('p14')[0].style.pointerEvents).toBe('auto');
+    expect(controlOf('p14')[0].style.pointerEvents).toBe('none');
     hoverAway();
   });
 });
@@ -1346,6 +1412,113 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
   });
 });
 
+describe('静止したポインタ下の投稿再描画（#1249）', () => {
+  let original: HTMLElement;
+  let other: HTMLElement;
+  let previousMode: unknown;
+  const originalUrl = '/rerender/status/1818';
+  const nextUrl = '/recycled/status/1919';
+  const changePost = () => {
+    const link = original.querySelector('a');
+    if (!link) throw new Error('再利用する投稿のリンクがありません');
+    link.setAttribute('href', nextUrl);
+  };
+  const newMedia = (top = '6000') => {
+    const box = window.document.createElement('div');
+    box.setAttribute('data-testid', 'tweetPhoto');
+    box.setAttribute('data-rect-top', top);
+    const image = window.document.createElement('img');
+    image.src = 'https://pbs.twimg.com/media/RERENDER.jpg';
+    box.append(image);
+    return box;
+  };
+  const newPost = (id: string, url: string, top: string) => {
+    const post = window.document.createElement('article');
+    post.id = id;
+    post.setAttribute('data-testid', 'tweet');
+    const link = window.document.createElement('a');
+    link.href = url;
+    link.append(window.document.createElement('time'));
+    post.append(link, newMedia(top));
+    return post;
+  };
+
+  beforeAll(() => {
+    previousMode = storage.savedBadgeMode;
+    setSetting('savedBadgeMode', 'off');
+  });
+  beforeEach(async () => {
+    hoverAway();
+    original = newPost('rerender-original', originalUrl, '6000');
+    other = newPost('rerender-other', nextUrl, '6600');
+    window.document.getElementById('feed').append(original, other);
+    await settle();
+    intersect([original.id, other.id], true);
+    await settle();
+    hover(original.id);
+    expect(controlOf(original.id)).toHaveLength(1);
+  });
+  afterEach(async () => {
+    hoverAway();
+    intersect([original.id, other.id], false);
+    original.remove();
+    other.remove();
+    await settle();
+  });
+  afterAll(() => setSetting('savedBadgeMode', previousMode));
+
+  test('同じ投稿の画像ノードを交換しても保存対象を維持する', async () => {
+    boxOf(original.id).replaceWith(newMedia());
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(1);
+    click(controlOf(original.id)[0]);
+    expect(sent.at(-1)).toMatchObject({ type: 'savePost', postUrl: `https://x.com${originalUrl}` });
+  });
+
+  test('再描画と同時に別投稿がポインタ下へ来ても対象を移さない', async () => {
+    boxOf(original.id).replaceWith(newMedia('6600'));
+    boxOf(other.id).setAttribute('data-rect-top', '6000');
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(0);
+    expect(controlOf(other.id)).toHaveLength(0);
+    hover(other.id);
+    expect(controlOf(other.id)).toHaveLength(1);
+  });
+
+  test('投稿要素が別投稿に再利用され画像も交換されたら解除する', async () => {
+    changePost();
+    boxOf(original.id).replaceWith(newMedia());
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(0);
+  });
+
+  test('投稿と画像の箱を再利用しても投稿URLが変わったら解除する', async () => {
+    changePost();
+    boxOf(original.id).querySelector('img').src = 'https://pbs.twimg.com/media/RECYCLED.jpg';
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(0);
+  });
+
+  test('別投稿の小さい箱が重なっても元投稿の新しい箱へ引き継ぐ', async () => {
+    boxOf(original.id).replaceWith(newMedia());
+    boxOf(other.id).setAttribute('data-rect-top', '6050');
+    boxOf(other.id).setAttribute('data-rect-size', '200');
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(1);
+    expect(controlOf(other.id)).toHaveLength(0);
+  });
+
+  test('再利用で解除した後もスクロール完了時には新しい投稿を採用する', async () => {
+    changePost();
+    boxOf(original.id).replaceWith(newMedia());
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(0);
+    window.dispatchEvent(new window.Event('scroll'));
+    window.dispatchEvent(new window.Event('scrollend'));
+    expect(controlOf(original.id)).toHaveLength(1);
+  });
+});
+
 // #594: 拡張機能が読み込み直されたり自動更新されたりすると、開きっぱなしのタブに残った常駐
 // スクリプトは拡張機能との接続を失う（孤児になる）。UI はページに残るが、`chrome.*` を呼ぶと
 // 同期の例外が飛ぶ。
@@ -1382,7 +1555,7 @@ describe('拡張が更新されて孤児になったタブ（#594）', () => {
   test('孤児になる前は普通に保存ボタンが出ている', () => {
     const [button] = controlOf('p15');
 
-    expect(button?.getAttribute('data-hologram-face')).toBe('save');
+    expect(disc(button).getAttribute('data-hologram-face')).toBe('save');
   });
 
   // 直す前は Uncaught Error になり、受領を待つタイムアウトまで回転子が回り続けたあげく、

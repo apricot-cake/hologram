@@ -40,7 +40,7 @@ declare global {
   interface HologramGridModel {
     items: any[];
     itemsKey: string | number;
-    modelOf(item: any, i: number): any;
+    modelOf(item: any, i: number, columnWidth?: number): any;
     keyOf?(item: any, i: number): string | number | null | undefined;
     columnCount?: number;
     columnWidth?: number;

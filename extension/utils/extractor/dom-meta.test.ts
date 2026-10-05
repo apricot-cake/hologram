@@ -230,6 +230,7 @@ describe('X: 画面から読む投稿情報', () => {
 
   test('通常の投稿＝本文・作者・日時・5種の数値', () => {
     expect(read('tweetPlain')).toEqual({
+      snapshot: { url: 'https://x.com/alice/status/111', media: [], complete: true, mediaComplete: true },
       text: 'Hello 🌸\nworld',
       displayName: 'Alice Example',
       screenName: 'alice',
@@ -253,6 +254,7 @@ describe('X: 画面から読む投稿情報', () => {
 
   test('いいね済み・リポスト済みで testid が変わっても読める（日本語の省略表記つき）', () => {
     expect(read('tweetActed')).toEqual({
+      snapshot: { url: 'https://x.com/bob/status/222', media: [], complete: true, mediaComplete: true },
       text: 'ふつうの投稿',
       displayName: 'Bob',
       screenName: 'bob',

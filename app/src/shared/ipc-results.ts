@@ -46,7 +46,7 @@ export interface IpcResults {
   'set-pref': P.OkResult;
   'image-data-url': string | null;
   'ugoira-frames-present': boolean;
-  'ugoira-frame': Uint8Array<ArrayBuffer> | null;
+  'ugoira-frame': { bytes: Uint8Array<ArrayBuffer>; width: number; height: number } | null;
   'delete-post': P.OkResult;
   'update-tags': P.UpdateTagsResult;
   'clear-all': P.ClearAllResult;

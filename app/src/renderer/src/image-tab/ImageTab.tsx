@@ -11,6 +11,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { register as registerEditControls } from '../services/image-edit-controls.ts';
 import { ImageEditor } from './ImageEditor.tsx';
 import { useOrientedImage } from './use-oriented-image.ts';
+import { OrientedImageFrame } from './oriented-image-frame.tsx';
 import type { Rotation } from './image-edit.ts';
 import { UgoiraPlayer } from './UgoiraPlayer.tsx';
 import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader } from './preload.ts';
@@ -61,7 +62,7 @@ export interface ImageTabModel {
 }
 
 // ホイールでズーム、ドラッグで移動し、ダブルクリックでウィンドウに合わせる。
-function Zoomable({ src, alt, flip, crop, sourceWidth, sourceHeight }: { src: string; alt: string; flip: boolean; crop?: CropRect | null; sourceWidth?: number; sourceHeight?: number }) {
+function Zoomable({ src, alt, flip, rotation = 0, crop, sourceWidth, sourceHeight }: { src: string; alt: string; flip: boolean; rotation?: Rotation; crop?: CropRect | null; sourceWidth?: number; sourceHeight?: number }) {
   const twRef = useRef<ReactZoomPanPinchRef | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
@@ -207,9 +208,7 @@ function Zoomable({ src, alt, flip, crop, sourceWidth, sourceHeight }: { src: st
         {/* decoding="async"（#241）: この <img> こそが画面そのものなので、同期デコードが
             歩調を合わせるべき「他の DOM の内容」が存在しない＝できるのは、フレーム（と
             送りのボタンと枚数表示）を数メガピクセルのデコードの人質に取ることだけ。
-            グリッドのカードが既に出しているのと同じ答え。async がスライドの切り替えで
-            残しうる空白の一瞬は、反対側から埋めている＝preload.ts が送りの前にデコードを
-            温めておく。 */}
+            隣の画像は preload.ts で取得だけを先行させ、復号は選択後に行う。 */}
         {/* onTransform だけでなく onLoad も: 百分率は naturalWidth で割るが、本来の寸法が
             届くまでそれは 0 ＝画像が本当にそこに来た後の2度目が無ければ、最初の publish は
             何も表示できない。キャッシュ済みの画像なら、この要素が一度も transform しない
@@ -221,38 +220,59 @@ function Zoomable({ src, alt, flip, crop, sourceWidth, sourceHeight }: { src: st
             ないので、どれだけ詳細度を上げてもレイヤー内のユーティリティより順位が上に
             なる＝そう書かれた第三者の規則に対して残された手が important 修飾子。ここで
             イベントを受け取っても安全なのは、そもそも画像が draggable={false} だから。 */}
-        <div className="relative grid max-h-full max-w-full overflow-hidden" style={cropAspect ? { aspectRatio: cropAspect, width: '100%' } : undefined}>
-          <img
-            ref={imgRef}
+        {rotation || flip ? (
+          <OrientedImageFrame
+            imageRef={imgRef}
+            rotation={rotation}
+            flipped={flip}
+            crop={crop}
+            sourceWidth={sourceWidth}
+            sourceHeight={sourceHeight}
             data-slot="viewer-image"
-            style={
-              visibleCrop
-                ? {
-                    gridArea: '1 / 1',
-                    position: 'absolute',
-                    width: `${100 / visibleCrop.width}%`,
-                    height: `${100 / visibleCrop.height}%`,
-                    maxWidth: 'none',
-                    maxHeight: 'none',
-                    left: `${(-visibleCrop.x / visibleCrop.width) * 100}%`,
-                    top: `${(-visibleCrop.y / visibleCrop.height) * 100}%`,
-                  }
-                : { gridArea: '1 / 1' }
-            }
-            className={`pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing ${flip ? 'scale-x-[-1]' : ''}`}
+            className="pointer-events-auto! cursor-grab active:cursor-grabbing"
             src={src}
             alt={alt}
             decoding="async"
             draggable={false}
-            onLoad={(event) => {
-              setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
-              publish();
-            }}
+            onLoad={publish}
             onDoubleClick={onDouble}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
           />
-        </div>
+        ) : (
+          <div className="relative grid max-h-full max-w-full overflow-hidden" style={cropAspect ? { aspectRatio: cropAspect, width: '100%' } : undefined}>
+            <img
+              ref={imgRef}
+              data-slot="viewer-image"
+              style={
+                visibleCrop
+                  ? {
+                      gridArea: '1 / 1',
+                      position: 'absolute',
+                      width: `${100 / visibleCrop.width}%`,
+                      height: `${100 / visibleCrop.height}%`,
+                      maxWidth: 'none',
+                      maxHeight: 'none',
+                      left: `${(-visibleCrop.x / visibleCrop.width) * 100}%`,
+                      top: `${(-visibleCrop.y / visibleCrop.height) * 100}%`,
+                    }
+                  : { gridArea: '1 / 1' }
+              }
+              className={`pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing ${flip ? 'scale-x-[-1]' : ''}`}
+              src={src}
+              alt={alt}
+              decoding="async"
+              draggable={false}
+              onLoad={(event) => {
+                setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
+                publish();
+              }}
+              onDoubleClick={onDouble}
+              onPointerDown={onPointerDown}
+              onPointerUp={onPointerUp}
+            />
+          </div>
+        )}
       </TransformComponent>
     </TransformWrapper>
   );
@@ -262,7 +282,7 @@ function OrientedImage({ item }: { item: ImageTabItem }) {
   const image = useOrientedImage(item.src, item.rotation ?? 0, !!item.flipped);
   if (image.error) return <div role="alert">{image.error}</div>;
   if (!image.src) return <div className="m-auto">読み込み中…</div>;
-  return <Zoomable key={image.src} src={image.src} alt={item.alt || ''} flip={false} crop={item.crop} />;
+  return <Zoomable key={`${image.src}:${image.rotation}:${image.flipped}`} src={image.src} alt={item.alt || ''} flip={image.flipped} rotation={image.rotation} crop={item.crop} sourceWidth={item.width} sourceHeight={item.height} />;
 }
 
 // ステージ全体。メディア＋前後の送り＋枚数表示＋インスペクタの切り替え。欠落した状態
@@ -272,7 +292,7 @@ function OrientedImage({ item }: { item: ImageTabItem }) {
 export function ImageTab({ model }: { model: ImageTabModel }) {
   const { items, idx, missing, labels } = model;
   const i = items.length ? Math.max(0, Math.min(idx, items.length - 1)) : 0;
-  // 隣を取得済みかつデコード済みに保つ（#241）。フックの順序を安定させるため、欠落状態
+  // 隣を取得済みに保つ（#241）。フックの順序を安定させるため、欠落状態
   // の return より上に置く。一覧が空なら、何も先読みせず前のタブが抱えていたものを手放す
   // だけになる。
   const preloader = useRef<NeighborPreloader | null>(null);
@@ -319,9 +339,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
     // ウィンドウ合わせへ戻すのはこれだし、あるスライドの再生状態（うごイラのデコードの
     // ループ、<video> の再生位置）が次へ滲み出すのを止めているのもこれ。外せば、それらを
     // すべて src の変化を見る effect から導き直すことになる＝速くしたい対象より確実に
-    // 広い面になる。しかもここでは何も得られない。送りが冷たく感じられた原因は、載せ
-    // 直しではなく冷たい取得とデコードだったから。preload.ts が隣を温めていれば、載せ
-    // 直された <img> は温まった資源と温まったデコードに当たる。
+    // 広い面になる。preload.ts は隣の取得だけを先行させ、選択後の <img> がその資源を使う。
     <div
       data-slot="image-tab-stage"
       className="relative flex min-w-0 flex-1 overflow-hidden"

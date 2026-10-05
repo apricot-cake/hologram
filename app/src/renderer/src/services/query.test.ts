@@ -1,4 +1,4 @@
-import { searchFields } from '../../../shared/search-fields.ts';
+import { SEARCH_FIELD_MAX_LENGTH, searchFields } from '../../../shared/search-fields.ts';
 const searchValues = (p: HologramPost) => Object.values(searchFields(p));
 import { postView } from '../../../../../tests/helpers/test-post-view.ts';
 // query.ts のロジック単体テスト。条件木の評価（evalNode）、葉ごとの述語
@@ -156,6 +156,13 @@ describe('葉の述語', () => {
     });
     expect(p({ kind: 'cond', type: 'tag', value: '__none' } as any)(post({ tags: [], tagIds: [7] }) as any)).toBe(true);
     expect(calls).toEqual([]);
+  });
+
+  test('tagId 付きの __none は実在タグとして検索する', () => {
+    const tagged = post({ tags: ['__none'], tagIds: [7] });
+    expect(predOf({ type: 'tag', value: '__none', tagId: 7 })(tagged)).toBe(true);
+    expect(predOf({ type: 'tag', value: '__none', tagId: 8 })(tagged)).toBe(false);
+    expect(predOf({ type: 'tag', value: '__none', tagId: 7 })(post({ tags: [], tagIds: [] }))).toBe(false);
   });
 
   // #774: id の照合は実効集合を読む。これが「親タグで検索すると子も出る」を
@@ -546,6 +553,21 @@ describe('純ヘルパ', () => {
     expect(searchValues(postView({ text: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
+  test('検索用のページ由来テキストをフィールド上限で打ち切る', () => {
+    const oversized = 'a'.repeat(SEARCH_FIELD_MAX_LENGTH + 1_000);
+    const fields = searchFields(
+      postView({
+        text: oversized,
+        media: [{ alt: oversized }, { alt: '上限より後' }],
+        quotedPost: { text: oversized, displayName: oversized, media: [{ alt: oversized }] },
+      }),
+    );
+    expect(fields.text).toHaveLength(SEARCH_FIELD_MAX_LENGTH);
+    expect(fields.alt).toHaveLength(SEARCH_FIELD_MAX_LENGTH);
+    expect(fields.quoted).toHaveLength(SEARCH_FIELD_MAX_LENGTH);
+    expect(fields.alt).not.toContain('上限より後');
+  });
+
   // #188: pixiv シリーズタイトルで検索すると所属作品が出るように、検索テキスト束へ足す
   test('textHaystackOf は seriesTitle を連結する（#188）', () => {
     expect(searchValues(postView({ text: null, seriesTitle: 'ある冒険' }))).toEqual(expect.arrayContaining(['ある冒険']));
@@ -645,12 +667,25 @@ describe('木の変異ドメイン', () => {
       const a = { kind: 'cond', type: 'tag', value: 'alice', tagId: 1 } as any;
       expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 2 })).toBe(false);
       expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 1 })).toBe(true);
+      expect(Q.sameLeaf(a, { type: 'tag', value: 'alice-renamed', tagId: 1 })).toBe(true);
     });
 
-    test('どちらかが id を持たなければ名前へ落ちる', () => {
+    test('通常タグは片側だけが id を持つとき旧名へフォールバックする', () => {
       const noId = { kind: 'cond', type: 'tag', value: 'alice' } as any;
       expect(Q.sameLeaf(noId, { type: 'tag', value: 'alice', tagId: 2 })).toBe(true);
       expect(Q.sameLeaf(noId, { type: 'tag', value: 'bob', tagId: 2 })).toBe(false);
+    });
+
+    test('実在する __none タグとタグなし番兵を区別する', () => {
+      const sentinel = { kind: 'cond', type: 'tag', value: '__none' } as any;
+      const entity = { type: 'tag', value: '__none', tagId: 7 };
+      expect(Q.sameLeaf(sentinel, entity)).toBe(false);
+      expect(Q.sameLeaf({ ...sentinel, tagId: 7 }, entity)).toBe(true);
+    });
+
+    test('poster 文脈では name-only の __none も実タグ ID へフォールバックする', () => {
+      const legacy = { kind: 'cond', type: 'tag', value: '__none' } as any;
+      expect(Q.sameLeaf(legacy, { type: 'tag', value: '__none', tagId: 7 }, { tagNoneIsSentinel: false })).toBe(true);
     });
 
     test('hasSameLeaf は入れ子の実体も見つける', () => {

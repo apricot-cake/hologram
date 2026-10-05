@@ -10,15 +10,18 @@
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
 // 「唯一の」ウィンドウではない。
-import { dialog, clipboard, BrowserWindow } from 'electron';
+import { app, dialog, clipboard, BrowserWindow, type WebContents } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
 import * as archive from './lib-archive.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
+import { libraryDestinationDir } from './native-host.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
+import { imageSize } from './lib-imgsize.ts';
+import { prepareImageBytes } from './image-processing.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
@@ -26,46 +29,100 @@ import { classifyLibraryFolder } from './lib-library-folder.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import { ITEMS_SUBDIR, itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
+import { isStoredCaptureId } from '../../../native-host/capture-id.mts';
 import type { IpcContext } from './ipc-context.ts';
+import { withLibraryRelocationPaused } from './lib-library-relocation-lifecycle.ts';
+import { runLibraryBackgroundTask } from './lib-library-background-activity.ts';
 import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropCollectResult, DroppedFile, DropImportResult, ExportCompleteResult, ExportSaveResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
+import { saveFolderCloudMessages } from '../shared/save-folder-cloud-messages.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 }
 
-// 移動先ライブラリの名前付きサブフォルダ。フォルダを選んだ時に sidecar・画像を
-// 直下へ平積みしないため（BACKUP_SUBDIR の Hologram-backup と対の関係）。
-const LIBRARY_SUBDIR = 'Hologram-library';
+// Blob を Buffer に展開する前の上限。通常のクリップボード画像には十分な余裕を持たせつつ、
+// 画像とは無関係な巨大 ancillary chunk をメインプロセスへ読み込ませない。
+const MAX_CLIPBOARD_PNG_BYTES = 64 * 1024 * 1024;
+const MAX_CLIPBOARD_PIXELS = 40_000_000;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 // 拡張子の一覧と、ローカルインポートしたファイルがなるレコードの形は lib-local-intake.ts に
 // 移した＝下のダイアログはそれを共有する4つの入り口のひとつ
 // （#84 の実装設計コメント参照。クリップボードの入り口はこのファイルの末尾）。
 
 function register(ctx: IpcContext) {
-  const {
-    getSaveFolder,
-    defaultLibraryDir,
-    getTrashDir,
-    readConfig,
-    writeConfig,
-    readSavePointer,
-    isConfigCorrupt,
-    clearAllBlockReason,
-    getLibraryStatus,
-    LIBRARY_MEDIA_EXTS,
-    getDbWriter,
-    send,
-    validateSaveFolder,
-    relocateLibrary,
-    restoreMissingLibrary,
-    closeDb,
-    openDb,
-    watchInboxFolder,
-    resetDelta,
-    ensurePostsSynced,
-    markExported,
-    notePostsSaved,
-  } = ctx;
+  const { getSaveFolder, defaultLibraryDir, getTrashDir, readConfig, writeConfig, readSavePointer, isConfigCorrupt, clearAllBlockReason, getLibraryStatus, LIBRARY_MEDIA_EXTS, getDbWriter, send, validateSaveFolder, relocateLibrary, restoreMissingLibrary, ensurePostsSynced, markExported, notePostsSaved } = ctx;
+
+  // クラウド同期先への移動許可は renderer にパスや bearer token として渡さない。
+  // main が選んだパスを、確認を表示した同じ WebContents にだけ短時間・一回限りで
+  // 結び付ける。WeakMap にすることで、破棄通知を受け損ねても sender を生かし続けない。
+  const CLOUD_MOVE_GRANT_MS = 30_000;
+  type CloudMoveGrant = { dest: string; expiresAt: number; timer: ReturnType<typeof setTimeout> };
+  type SaveFolderFlow = { generation: number; inProgress: boolean };
+  const cloudMoveGrants = new WeakMap<WebContents, CloudMoveGrant>();
+  const saveFolderFlows = new WeakMap<WebContents, SaveFolderFlow>();
+  const sendersWithDestroyCleanup = new WeakSet<WebContents>();
+
+  function clearCloudMoveGrant(sender: WebContents) {
+    const grant = cloudMoveGrants.get(sender);
+    cloudMoveGrants.delete(sender);
+    if (grant) clearTimeout(grant.timer);
+  }
+
+  function ensureSenderDestroyCleanup(sender: WebContents) {
+    // grant ごとに once を足すと、grant が消費・取消されても destroyed まで listener が
+    // 残り、反復操作で MaxListeners 警告になる。sender の生存期間につき一つだけ置く。
+    if (sendersWithDestroyCleanup.has(sender)) return;
+    sendersWithDestroyCleanup.add(sender);
+    sender.once('destroyed', () => {
+      clearCloudMoveGrant(sender);
+      saveFolderFlows.delete(sender);
+      sendersWithDestroyCleanup.delete(sender);
+    });
+  }
+
+  function grantCloudMove(sender: WebContents, dest: string) {
+    ensureSenderDestroyCleanup(sender);
+    let grant: CloudMoveGrant;
+    const timer = setTimeout(() => {
+      if (cloudMoveGrants.get(sender) === grant) clearCloudMoveGrant(sender);
+    }, CLOUD_MOVE_GRANT_MS);
+    grant = { dest, expiresAt: Date.now() + CLOUD_MOVE_GRANT_MS, timer };
+    cloudMoveGrants.set(sender, grant);
+    timer.unref();
+  }
+
+  function consumeCloudMoveGrant(sender: WebContents): string | null {
+    const grant = cloudMoveGrants.get(sender);
+    // 成否にかかわらず先に消費する。検証や移動の失敗を、同じ許可で再試行することも
+    // できない。一回の明示承認は一回の移動試行だけを意味する。
+    clearCloudMoveGrant(sender);
+    if (!grant || grant.expiresAt <= Date.now()) return null;
+    return grant.dest;
+  }
+
+  function beginSaveFolderFlow(sender: WebContents): SaveFolderFlow {
+    const flow = { generation: (saveFolderFlows.get(sender)?.generation ?? 0) + 1, inProgress: true };
+    saveFolderFlows.set(sender, flow);
+    // 新しい世代は、同じ sender の以前の選択が作った未使用許可も失効させる。
+    clearCloudMoveGrant(sender);
+    return flow;
+  }
+
+  function isCurrentSaveFolderFlow(sender: WebContents, flow: SaveFolderFlow): boolean {
+    const current = saveFolderFlows.get(sender);
+    return !sender.isDestroyed() && current?.generation === flow.generation && current.inProgress;
+  }
+
+  function finishSaveFolderFlow(sender: WebContents, flow: SaveFolderFlow) {
+    if (saveFolderFlows.get(sender)?.generation === flow.generation) flow.inProgress = false;
+  }
+
+  function cloudWarningMessages() {
+    const saved = readConfig().language;
+    const language = saved === 'ja' || (saved !== 'en' && app.getLocale().toLowerCase().startsWith('ja')) ? 'ja' : 'en';
+    return saveFolderCloudMessages[language];
+  }
 
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
     const folder = getSaveFolder();
@@ -109,9 +166,35 @@ function register(ctx: IpcContext) {
     } catch {
       /* 空 */
     }
+    const quotedMediaRoot = path.join(folder, 'quoted-media');
+    try {
+      for (const quote of fs.readdirSync(quotedMediaRoot, { withFileTypes: true })) {
+        if (!quote.isDirectory()) continue;
+        try {
+          count += fs.readdirSync(path.join(quotedMediaRoot, quote.name), { withFileTypes: true }).filter((entry) => entry.isFile()).length;
+        } catch {
+          /* 数えられなくても、下で保存領域全体を消す */
+        }
+      }
+      fs.rmSync(quotedMediaRoot, { recursive: true, force: true });
+    } catch {
+      /* 空 */
+    }
     try {
       for (const f of fs.readdirSync(folder)) {
         if (CLEAR_RE.test(f)) {
+          try {
+            fs.unlinkSync(path.join(folder, f));
+            count++;
+          } catch {
+            /* スキップ */
+          }
+          continue;
+        }
+        // 旧 bridge が直下に残した投稿 sidecar も投稿の実体である。拡張子だけで JSON を
+        // 消すと利用者の無関係な設定まで失うため、bridge が生成しうる保存済み captureId
+        // （衝突 suffix を含む）と完全一致するものだけを対象にする。
+        if (f.toLowerCase().endsWith('.json') && isStoredCaptureId(f.slice(0, -'.json'.length))) {
           try {
             fs.unlinkSync(path.join(folder, f));
             count++;
@@ -151,73 +234,106 @@ function register(ctx: IpcContext) {
   ipcMain.handle('export-complete', async (_e, mode, includeTrash): Promise<ExportCompleteResult> => {
     const imagesOnly = mode === 'images';
     const src = getSaveFolder();
-    // 空かどうかは readdir で安く分かる——ダイアログより前に確認して、空のライブラリで
-    // 保存プロンプトが出ないようにする（旧来の fileCount===0 → empty の挙動と一致）。
-    let hasAny: boolean;
+    const owner = imagesOnly ? null : ctx.reserveCompleteExport();
+    if (!imagesOnly && owner === null) return { saved: false, error: 'library-busy' };
     try {
-      hasAny = await archive.hasExportableFiles(src, imagesOnly);
+      // 空かどうかは readdir で安く分かる——ダイアログより前に確認して、空のライブラリで
+      // 保存プロンプトが出ないようにする（旧来の fileCount===0 → empty の挙動と一致）。
+      let hasAny: boolean;
+      try {
+        if (imagesOnly) hasAny = await archive.hasExportableFiles(src, true);
+        else {
+          const handle = await ensurePostsSynced();
+          if (!handle) return { saved: false, error: 'no-folder' };
+          hasAny = await archive.hasCompleteExportContent(handle.sqlite, src, getTrashDir(), !!includeTrash);
+        }
+      } catch (err) {
+        return { saved: false, error: err.message };
+      }
+      if (!hasAny) return { saved: false, empty: true };
+      // complete 形式のエクスポートは投稿を DB から読む（imagesOnly は従来どおり単純な
+      // ディスクコピーのまま——もともと sidecar／整理情報は含んでいなかった）。
+      // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
+      const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
+      if (res.canceled || !res.filePath) return { saved: false };
+      // アーカイブは選ばれたパスへ直接ストリームする（yazl: メモリ使用量が有界＋ZIP64）
+      // ＝ライブラリ全体がメモリに乗ることはなく、4 GiB 超のアーカイブも壊れない。
+      // 進捗は Windows タスクバー（BrowserWindow.setProgressBar）とアプリ内 % 表示用の
+      // 'export-progress' IPC イベントの両方を駆動する。整数パーセントの変化にだけ絞って
+      // 発火を抑える。失敗した場合は必ず部分ファイルを削除し、書きかけの ZIP を
+      // 残さない。タスクバーの進捗は呼び出したウィンドウ自身のもの（setProgressBar は
+      // ウィンドウ単位）。export-progress は従来どおり全体へのブロードキャスト（send）の
+      // ままにする。安いし、自分以外のウィンドウが自分のではないエクスポートを追跡することは
+      // ないため——レンダラーは自分と関係ない進行中の操作のイベントを無視する。
+      const win = BrowserWindow.fromWebContents(_e.sender);
+      let lastPct = -1;
+      const onProgress = (written: number, total: number) => {
+        const frac = total > 0 ? Math.min(1, written / total) : 0;
+        const pct = Math.floor(frac * 100);
+        if (pct === lastPct) return;
+        lastPct = pct;
+        try {
+          win?.setProgressBar(frac);
+        } catch {
+          /* ウィンドウが無い */
+        }
+        send('export-progress', { written, total, pct });
+      };
+      const state: { snapshot: Awaited<ReturnType<typeof archive.prepareCompleteExport>> | null } = { snapshot: null };
+      let watermark: ReturnType<IpcContext['beginCompleteExport']> | null = null;
+      let outputStarted = false;
+      try {
+        if (!imagesOnly) {
+          if (getSaveFolder() !== src) throw new Error('library-changed');
+          const prepared = await withLibraryRelocationPaused(
+            () => ctx.pauseCompleteExport(owner as number),
+            async (owner) => {
+              if (getSaveFolder() !== src) throw new Error('library-changed');
+              const handle = ctx.getDbForCompleteExport(owner);
+              if (!handle) throw new Error('no-folder');
+              watermark = ctx.beginCompleteExport();
+              state.snapshot = await archive.prepareCompleteExport(handle.sqlite, src, getTrashDir(), { includeTrash: !!includeTrash, stageParent: path.dirname(res.filePath) });
+              return true;
+            },
+            ctx.finishCompleteExport,
+            false,
+          );
+          if (!prepared) return { saved: false, error: 'library-busy' };
+          if (!state.snapshot?.hasContent) return { saved: false, empty: true };
+        }
+        win?.setProgressBar(0);
+        send('export-progress', { written: 0, total: 0, pct: 0 });
+        outputStarted = true;
+        const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await state.snapshot?.write(res.filePath, onProgress);
+        if (!built) throw new Error('snapshot-unavailable');
+        try {
+          win?.setProgressBar(-1);
+        } catch {
+          /* ウィンドウが無い */
+        }
+        send('export-progress', { done: true });
+        if (watermark) markExported(watermark);
+        return { saved: true, path: res.filePath, fileCount: built.fileCount };
+      } catch (err) {
+        try {
+          win?.setProgressBar(-1);
+        } catch {
+          /* ウィンドウが無い */
+        }
+        send('export-progress', { done: true });
+        try {
+          if (outputStarted) await fs.promises.unlink(res.filePath);
+        } catch {
+          /* 掃除するものは無い */
+        }
+        return { saved: false, error: err.message };
+      } finally {
+        await state.snapshot?.dispose();
+      }
     } catch (err) {
       return { saved: false, error: err.message };
-    }
-    if (!hasAny) return { saved: false, empty: true };
-    // complete 形式のエクスポートは投稿を DB から読む（imagesOnly は従来どおり単純な
-    // ディスクコピーのまま——もともと sidecar／整理情報は含んでいなかった）。
-    let handle: any = null;
-    if (!imagesOnly) {
-      handle = await ensurePostsSynced();
-      if (!handle) return { saved: false, error: 'no-folder' };
-    }
-    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
-    const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
-    if (res.canceled || !res.filePath) return { saved: false };
-    // アーカイブは選ばれたパスへ直接ストリームする（yazl: メモリ使用量が有界＋ZIP64）
-    // ＝ライブラリ全体がメモリに乗ることはなく、4 GiB 超のアーカイブも壊れない。
-    // 進捗は Windows タスクバー（BrowserWindow.setProgressBar）とアプリ内 % 表示用の
-    // 'export-progress' IPC イベントの両方を駆動する。整数パーセントの変化にだけ絞って
-    // 発火を抑える。失敗した場合は必ず部分ファイルを削除し、書きかけの ZIP を
-    // 残さない。タスクバーの進捗は呼び出したウィンドウ自身のもの（setProgressBar は
-    // ウィンドウ単位）。export-progress は従来どおり全体へのブロードキャスト（send）の
-    // ままにする。安いし、自分以外のウィンドウが自分のではないエクスポートを追跡することは
-    // ないため——レンダラーは自分と関係ない進行中の操作のイベントを無視する。
-    const win = BrowserWindow.fromWebContents(_e.sender);
-    let lastPct = -1;
-    const onProgress = (written: number, total: number) => {
-      const frac = total > 0 ? Math.min(1, written / total) : 0;
-      const pct = Math.floor(frac * 100);
-      if (pct === lastPct) return;
-      lastPct = pct;
-      try {
-        win?.setProgressBar(frac);
-      } catch {
-        /* ウィンドウが無い */
-      }
-      send('export-progress', { written, total, pct });
-    };
-    try {
-      win?.setProgressBar(0);
-      send('export-progress', { written: 0, total: 0, pct: 0 });
-      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await archive.writeCompleteZip(handle.sqlite, src, getTrashDir(), res.filePath, { includeTrash: !!includeTrash }, undefined, onProgress);
-      try {
-        win?.setProgressBar(-1);
-      } catch {
-        /* ウィンドウが無い */
-      }
-      send('export-progress', { done: true });
-      if (!imagesOnly) markExported();
-      return { saved: true, path: res.filePath, fileCount: built.fileCount };
-    } catch (err) {
-      try {
-        win?.setProgressBar(-1);
-      } catch {
-        /* ウィンドウが無い */
-      }
-      send('export-progress', { done: true });
-      try {
-        await fs.promises.unlink(res.filePath);
-      } catch {
-        /* 掃除するものは無い */
-      }
-      return { saved: false, error: err.message };
+    } finally {
+      if (owner !== null) await ctx.finishCompleteExport(owner);
     }
   });
 
@@ -253,10 +369,7 @@ function register(ctx: IpcContext) {
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const zipPath = res.filePaths[0];
     try {
-      const handle = await ensurePostsSynced();
-      if (!handle) return { ok: false, error: 'no-folder' };
-      const out = await archive.importCompleteZipToDb(handle.sqlite, zipPath, getSaveFolder());
-      return out;
+      return await ctx.importCompleteArchive(zipPath, getSaveFolder());
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -272,7 +385,7 @@ function register(ctx: IpcContext) {
   // 報告する。move-save-folder は利用者が受け入れた後に実際の移動をする。移動側は
   // 最初から検証をやり直す——レンダラーを一往復するのは UI 上の手順であって、
   // 信頼境界ではない。
-  function moveLibraryTo(dest: string): SaveFolderMoveResult | Promise<SaveFolderMoveResult> {
+  async function moveLibraryTo(dest: string): Promise<SaveFolderMoveResult> {
     const src = getSaveFolder();
     // #37: 移動は現在のフォルダからコピーする——もしそのフォルダが行方不明になった
     // 当のフォルダなら、コピー元が無く、「移動」は実質、`dest` に新しい空ライブラリを
@@ -286,50 +399,93 @@ function register(ctx: IpcContext) {
     // 追いつき→切り替え→DB を開き直す→検証付きクリーンアップ→残骸削除→遅延した
     // 取りこぼしの掃き寄せ——#176 でコピー＋切り替えの前後に DB の close/reopen を
     // 加えた）。
-    return relocateLibrary(src, dest, {
-      readConfig,
-      writeConfig,
-      emit: (payload) => send('save-folder-progress', payload),
-      closeDb,
-      openDb,
-      defaultLibraryDir: defaultLibraryDir(),
-      // 取込キューのウォッチャーを再設定し、差分の基準を捨ててレンダラーを全同期させる。
-      afterFlip: () => {
-        watchInboxFolder();
-        resetDelta();
-      },
-      // この掃き寄せは1分後に発火する——その間にライブラリがまた移動していたらスキップする。
-      stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
-    });
+    return withLibraryRelocationPaused(
+      ctx.pauseLibraryRelocation,
+      (owner) =>
+        relocateLibrary(src, dest, {
+          readConfig,
+          writeConfig,
+          emit: (payload) => send('save-folder-progress', payload),
+          closeDb: () => ctx.closeDbForLibraryRelocation(owner),
+          openDb: () => ctx.openDbForLibraryRelocation(owner),
+          defaultLibraryDir: defaultLibraryDir(),
+          afterFlip: () => {},
+          runBackground: runLibraryBackgroundTask,
+          // この掃き寄せは1分後に発火する——その間にライブラリがまた移動していたらスキップする。
+          stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
+        }),
+      // copy 失敗、移動先 DB の初期化失敗、成功後の再初期化失敗のすべてで必ず復旧する。
+      ctx.finishLibraryRelocation,
+      { ok: false, error: 'busy' },
+    );
   }
 
   ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
+    // await をまたぐ picker/警告応答は、同じ sender でも完了順が開始順とは限らない。
+    // 世代を進め、各 await の後でまだ最新かを確認することで、古い応答を無作用にする。
+    const flow = beginSaveFolderFlow(_e.sender);
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
-    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
-    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+    // 実アプリでは必ず main のネイティブ picker が選ぶ。隔離済み E2E の SMOKE
+    // プロセスだけは、その専用 config と同じ一時ディレクトリを環境から注入する。
+    const smokePick = process.env.HOLOGRAM_SMOKE === '1' ? process.env.HOLOGRAM_SMOKE_PICK_SAVE_FOLDER : undefined;
+    const res = smokePick ? { canceled: false, filePaths: [smokePick] } : await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
+    if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) {
+      finishSaveFolderFlow(_e.sender, flow);
+      return { ok: false, canceled: true };
+    }
     const chosen = res.filePaths[0];
-    // 選んだフォルダは「親」として扱い、ライブラリは名前付きサブフォルダに置く
-    // ——利用者自身のファイルがあるかもしれないフォルダへ、sidecar・画像を直下に
-    // 平積みしたりしない。既存の Hologram-library フォルダを選び直した場合はそのまま
-    // 使う（二重の入れ子にしない）。
-    const dest = path.basename(chosen).toLowerCase() === LIBRARY_SUBDIR.toLowerCase() ? chosen : path.join(chosen, LIBRARY_SUBDIR);
+    // 親フォルダの下に Hologram/Library を置く。Hologram や Library 自体を
+    // 選んだ場合は、その階層を重複して作らない。
+    const dest = libraryDestinationDir(chosen);
     const v = validateSaveFolder(dest);
-    if (!v.ok) return { ok: false, error: v.error };
+    if (!v.ok) {
+      finishSaveFolderFlow(_e.sender, flow);
+      return { ok: false, error: v.error };
+    }
 
     // 移動先がクラウド同期のルート配下にあるように見える時は警告する（ブロックはしない）
     // ＝ライブラリは実時間で書き込まれるので、同期クライアントがその書き込みと競合すると
     // 壊しかねない。判定はヒューリスティック→決めるのは利用者。クラウドへ控えを置く場合は、
     // 生きたライブラリではなく、手動で作成したバックアップファイルを同期対象へ保存する。
     const cloudProvider = cloudSyncProviderOf(dest);
-    if (cloudProvider) return { ok: false, confirm: 'cloud-sync', provider: cloudProvider, dest };
+    if (cloudProvider) {
+      const messages = cloudWarningMessages();
+      const options = {
+        type: 'warning' as const,
+        title: 'Hologram',
+        message: messages.saveFolderCloudWarn.replace('{name}', cloudProvider),
+        detail: messages.saveFolderCloudWarnDesc,
+        buttons: [messages.saveFolderCloudWarnOk, messages.confirmCancel],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      };
+      const parent = BrowserWindow.fromWebContents(_e.sender);
+      const answer = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+      // 古い A の承認は B の取消後に許可を復活させず、古い A の取消は B が発行した
+      // 許可を消さない。世代確認より前には grant に一切触れない。
+      if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+      if (answer.response !== 0) {
+        finishSaveFolderFlow(_e.sender, flow);
+        return { ok: false, canceled: true };
+      }
+      grantCloudMove(_e.sender, dest);
+      finishSaveFolderFlow(_e.sender, flow);
+      return { ok: false, confirm: 'cloud-sync', provider: cloudProvider };
+    }
 
+    // showOpenDialog 待機中に新しい世代が開始していれば、非クラウド先にも移動しない。
+    if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+    finishSaveFolderFlow(_e.sender, flow);
     return moveLibraryTo(dest);
   });
 
   // 選択フローの後半: 利用者が既に警告を受け入れた移動先へ実際に移動する。
   // 汎用の「どこへでも移動」の入り口ではない。
-  ipcMain.handle('move-save-folder', async (_e, dest): Promise<SaveFolderMoveResult> => {
-    if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
+  ipcMain.handle('move-save-folder', async (_e): Promise<SaveFolderMoveResult> => {
+    const dest = consumeCloudMoveGrant(_e.sender);
+    if (!dest) return { ok: false, error: 'invalid' };
     return moveLibraryTo(dest);
   });
 
@@ -559,10 +715,9 @@ function register(ctx: IpcContext) {
   // 知っているのがレンダラーだけなので、すべてレンダラー側の services/clipboard-intake.ts
   // で決める。
   //
-  // 常に PNG: readImage() が返すのはデコード済みのビットマップで、元のエンコードは
-  // 既に失われている。だから再エンコードは選択の余地が無く、「元の形式を保つ」は
-  // ここには実装されていない。元のバイト列を保つ場合は、ファイル選択か
-  // アプリへのドロップで取り込む。
+  // 常に PNG: ClipboardItem の PNG をここでデコードして再エンコードするため、元の
+  // エンコードは保存しない。「元の形式を保つ」場合は、ファイル選択かアプリへの
+  // ドロップで取り込む。
   //
   // `title` はレンダラーから来る。ラベルは利用者に見えるもので、このプロセスは
   // メッセージテーブルを持たないため（i18n はレンダラー限定、services/i18n.ts）。
@@ -581,7 +736,20 @@ function register(ctx: IpcContext) {
       const item = items.find((entry) => entry.types.includes('image/png'));
       if (item) {
         const payload = await item.getType('image/png');
-        if (payload instanceof Blob) bytes = Buffer.from(await payload.arrayBuffer());
+        if (payload instanceof Blob && payload.size <= MAX_CLIPBOARD_PNG_BYTES) {
+          // PNG署名と先頭のIHDRを検査し、復号前に展開後の画素量を制限する。
+          const header = Buffer.from(await payload.slice(0, 33).arrayBuffer());
+          const isPng = header.length === 33 && header.subarray(0, 8).equals(PNG_SIGNATURE) && header.readUInt32BE(8) === 13 && header.toString('ascii', 12, 16) === 'IHDR';
+          const dimensions = isPng ? imageSize(header) : null;
+          if (dimensions && dimensions.width * dimensions.height <= MAX_CLIPBOARD_PIXELS) {
+            // 復号したピクセルをPNGに戻し、不要なメタデータを保存しない。
+            const prepared = await prepareImageBytes(Buffer.from(await payload.arrayBuffer()), { kind: 'copy' });
+            if (prepared?.mime === 'image/png') {
+              const normalized = await fs.promises.readFile(prepared.path);
+              if (normalized.length <= MAX_CLIPBOARD_PNG_BYTES) bytes = normalized;
+            }
+          }
+        }
       }
     } catch {
       bytes = null;

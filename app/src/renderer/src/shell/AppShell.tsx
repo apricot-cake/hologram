@@ -22,7 +22,7 @@ import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { PostGrid, PostGridSlot } from '../grid/index.tsx';
 import { PosterGrid, PosterGridSlot } from '../posters/index.tsx';
-import { TabsHost } from '../tabs/index.tsx';
+import { ActiveTabPanel, AppTabs, TabsHost } from '../tabs/index.tsx';
 import { TrashGrid } from '../trash/TrashGrid.tsx';
 import { TrashView } from '../trash/TrashView.tsx';
 import { TITLEBAR_COLORS } from '../../../shared/window-chrome.ts';
@@ -160,7 +160,7 @@ export function AppShell() {
     // body レベルのオーバーレイにも居るし（種別メニューの名前変更ボタン）、遅延を共有すると
     // 言えるのは、1つのプロバイダがそれら全部を覆っているときだけだから。
     <>
-      <div className="flex h-svh flex-col overflow-hidden bg-[var(--tabbar-bg)]">
+      <AppTabs className="flex h-svh flex-col overflow-hidden bg-[var(--tabbar-bg)]">
         <header
           data-slot="tabs-band"
           inert={editing}
@@ -183,7 +183,7 @@ export function AppShell() {
           </div>
           {/* ページと詳細パネルは、タブ列の下の内容領域に収める。 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <div data-slot="page-surface" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-xl bg-[var(--bg)]">
+            <ActiveTabPanel data-slot="page-surface" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-xl bg-[var(--bg)]">
               <AppToolbar />
               <div data-slot="page-body" className="flex min-h-0 flex-1 gap-2 pt-3 pr-3">
                 <SidebarInset className="min-w-0 overflow-hidden bg-transparent">
@@ -240,10 +240,10 @@ export function AppShell() {
                   </div>
                 </aside>
               </div>
-            </div>
+            </ActiveTabPanel>
           </div>
         </SidebarProvider>
-      </div>
+      </AppTabs>
       {/* 仮想化のグリッドは、GridMount の effect 経由で上の枠に取り付く。masonic のホストへの
           取り付けと flushSync の経路を変えずに済むよう、コンテンツの列の外に置いてある。 */}
       <PostGrid />

@@ -9,7 +9,7 @@
 // タンには応答が返ってこなければならないからだ。
 export type Phase = 'idle' | 'saving' | 'flash' | 'error';
 // 隅が何を描いているか。null は何もない。
-export type Face = 'mark' | 'save' | 'failed';
+export type Face = 'mark' | 'save' | 'busy' | 'failed';
 // 「保存済み」の印をどう表示するか（設定ページ）。既定は `always`＝この
 // 印はステータス表示であり、その役目の一部は「これは保存したっけ」とい
 // う問いが意識に上る前に済ませてしまうことにある。これができるのは静止
@@ -21,8 +21,8 @@ export interface Anchor {
   hitBoxes: Element[]; // この操作を表示するホバー領域
   // 'text' は投稿ユニットを使い、アバターの位置に全体保存を配置する。
   kind: 'media' | 'text';
-  el: HTMLElement | null; // <hologram-corner-control>、ページのサブツリー内
-  root: ShadowRoot | HTMLElement | null; // el の見た目を描く先
+  el: HTMLElement | null; // closed shadow を持つ host、ページのサブツリー内
+  root: ShadowRoot | null; // el の closed shadow 内にある、見た目を描く先
   control: HTMLDivElement | HTMLButtonElement | null; // ディスクそのもの
   host: HTMLElement | null; // メディアと一緒にスクロールする、位置決めされた親
   hostInlinePosition: string | null; // こちらが加えたインライン position を復元する

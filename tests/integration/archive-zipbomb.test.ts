@@ -8,6 +8,7 @@
 //   (f) 整理用の JSON（folders.json など）には専用の上限がある（#382）＝専用上限を超える
 //       申告は展開する前に拒み、上限内なら従来どおり合流できる
 //   (g) 整理用 JSON の専用上限は、実際の出力バイト数でも打ち切る（申告値の偽装への防御）
+//   (i) 投稿サイドカー JSON は専用の小さな上限を申告値と実バイト数に掛ける
 //   (j) うごイラのコマ読み（#506）も同じ申告サイズのガードを通り、さらに1コマ専用の上限がある
 // どの拒否でも、悪意あるペイロードや .tmp-import ファイルをディスクに残してはいけない。
 //
@@ -23,10 +24,26 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
 import JSZip from 'jszip';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { MAX_UGOIRA_FRAME_BYTES, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_ORG_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, readStreamCapped, readUgoiraFrame, ugoiraFramesPresent, writeStreamCapped } from '../../app/src/main/lib-archive';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import {
+  MAX_UGOIRA_FRAME_BYTES,
+  MAX_ZIP_CAPTURE_JSON_BYTES,
+  MAX_ZIP_ENTRIES,
+  MAX_ZIP_ENTRY_BYTES,
+  MAX_ZIP_ORG_BYTES,
+  MAX_ZIP_TOTAL_BYTES,
+  ZipLimitError,
+  clearUgoiraArchiveIndexes,
+  readStreamCapped,
+  readUgoiraFrame,
+  setUgoiraBeforeReadHandleSlotForTest,
+  ugoiraArchiveIndexStats,
+  ugoiraFramesPresent,
+  writeStreamCapped,
+} from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 
@@ -128,6 +145,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  clearUgoiraArchiveIndexes();
   for (const h of handles) h.sqlite.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -238,20 +256,81 @@ describe('(e) ストリーム書き込みの予算', () => {
 
     expect(fs.statSync(tmp).size).toBe(payload.length);
   });
+
+  test('遅い書き込み先では展開元を止め、エントリ全体を待ち行列に溜めない', async () => {
+    let produced = 0;
+    let consumed = 0;
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const chunk = Buffer.alloc(64 * 1024, 9);
+    const input = Readable.from(
+      (function* () {
+        for (let i = 0; i < 128; i++) {
+          produced++;
+          yield chunk;
+        }
+      })(),
+      { objectMode: false, highWaterMark: chunk.length },
+    );
+    const output = new Writable({
+      highWaterMark: 1024,
+      write(bytes, _encoding, callback) {
+        consumed += bytes.length;
+        if (!release) {
+          release = callback;
+          entered();
+        } else setImmediate(callback);
+      },
+    });
+    const create = vi.spyOn(fs, 'createWriteStream').mockReturnValue(output as unknown as fs.WriteStream);
+    const writing = writeStreamCapped(input, path.join(dest, 'slow.bin'), 128 * chunk.length);
+    try {
+      await started;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(produced).toBeLessThan(8);
+      expect(output.writableLength).toBe(chunk.length);
+    } finally {
+      release();
+      await writing;
+      create.mockRestore();
+    }
+    expect(produced).toBe(128);
+    expect(consumed).toBe(128 * chunk.length);
+    expect(input.destroyed).toBe(true);
+    expect(output.destroyed).toBe(true);
+  });
+
+  test('書き込みエラーを返し、展開元も破棄する', async () => {
+    const input = source();
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback(new Error('disk full'));
+      },
+    });
+    const create = vi.spyOn(fs, 'createWriteStream').mockReturnValue(output as unknown as fs.WriteStream);
+    try {
+      await expect(writeStreamCapped(input, path.join(dest, 'failure.bin'), 1024 * 1024)).rejects.toThrow('disk full');
+      expect(input.destroyed).toBe(true);
+      expect(output.destroyed).toBe(true);
+    } finally {
+      create.mockRestore();
+    }
+  });
 });
 
 describe('(f) 整理用JSONの専用上限（#382）', () => {
-  const buildNormalZip = () =>
+  const buildNormalZip = (key = 'folders') =>
     buildZipBytes({
       'library/cap1.jpg': 'JPEGDATA1',
-      'library/folders.json': JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }),
+      [`library/${key}.json`]: JSON.stringify({ [key]: [{ id: 'f1', name: 'X', items: ['cap1'] }] }),
     });
 
-  test('folders.json の申告サイズが専用上限（16 MiB）超え → ZipLimitError で拒否し、何も書かない', async () => {
-    const dest = freshDest('org-declared-bomb');
-    const { sqlite } = freshDb('org-declared-bomb');
+  test.each(['folders', 'collections'])('%s.json の申告サイズが専用上限（16 MiB）超え → ZipLimitError で拒否し、何も書かない', async (key) => {
+    const dest = freshDest(`org-declared-bomb-${key}`);
+    const { sqlite } = freshDb(`org-declared-bomb-${key}`);
     const oversize = MAX_ZIP_ORG_BYTES + 1; // MAX_ZIP_ENTRY_BYTES よりはるかに下＝発火すべきは整理用 JSON 専用のガードだけ
-    const zipPath = zipFileOf(forgeDeclaredSizes(await buildNormalZip(), (name) => (name === 'library/folders.json' ? oversize : null)));
+    const zipPath = zipFileOf(forgeDeclaredSizes(await buildNormalZip(key), (name) => (name === `library/${key}.json` ? oversize : null)));
 
     await expect(importCompleteZipToDb(sqlite, zipPath, dest)).rejects.toThrow(ZipLimitError);
     expect(fs.readdirSync(dest)).toEqual([]);
@@ -310,6 +389,25 @@ describe('(h) 過少申告した capture は、書き出し中に打ち切られ
   });
 });
 
+describe('(i) 投稿サイドカー JSON の専用上限', () => {
+  test('申告サイズが JSON 専用上限を超えれば展開前に拒否する', async () => {
+    const dest = freshDest('capture-json-declared-bomb');
+    const { sqlite } = freshDb('capture-json-declared-bomb');
+    const bytes = await buildZipBytes({ 'library/cap.json': '{"captureId":"cap"}' });
+    const zipPath = zipFileOf(forgeDeclaredSizes(bytes, (name) => (name === 'library/cap.json' ? MAX_ZIP_CAPTURE_JSON_BYTES + 1 : null)));
+
+    await expect(importCompleteZipToDb(sqlite, zipPath, dest)).rejects.toThrow(ZipLimitError);
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: 0 });
+  });
+
+  test('実際の展開バイト数も JSON 専用上限で打ち切る', async () => {
+    const chunk = Buffer.alloc(MAX_ZIP_CAPTURE_JSON_BYTES / 2 + 1, 7);
+    const source = Readable.from([chunk, chunk]);
+
+    await expect(readStreamCapped(source, MAX_ZIP_CAPTURE_JSON_BYTES)).rejects.toThrow(ZipLimitError);
+  });
+});
+
 // うごイラの再生（#506）は、書庫を開く3つ目の読み手＝レンダラーでの JSZip の利用を外へ出した
 // 先。pixiv が配っている zip をそのまま持つ＝出所が第三者なので、他の2経路と同じ申告サイズの
 // 集計を通り、さらに「1コマ＝静止画1枚」という専用の上限を持つ。書庫あたりの合計の上限は
@@ -359,5 +457,158 @@ describe('(j) うごイラのコマ読み（#506）', () => {
     const zipPath = zipFileOf(craftArchiveDeclaring(MAX_ZIP_ENTRIES + 5));
 
     await expect(ugoiraFramesPresent(zipPath, ['000000.jpg'])).rejects.toThrow(ZipLimitError);
+  });
+
+  test('1001コマを超えても順序どおり読め、中央ディレクトリの訪問は1周だけ', async () => {
+    clearUgoiraArchiveIndexes();
+    const files: Record<string, string> = {};
+    const names = Array.from({ length: 1002 }, (_, i) => `${String(i).padStart(6, '0')}.jpg`);
+    for (let i = 0; i < names.length; i++) files[names[i]] = `FRAME${i}`;
+    const zipPath = zipFileOf(await buildZipBytes(files));
+
+    expect(await ugoiraFramesPresent(zipPath, names)).toBe(true);
+    const frames = await Promise.all(names.map((name) => readUgoiraFrame(zipPath, name)));
+
+    expect(frames.map((frame) => frame?.toString('utf8'))).toEqual(names.map((_, i) => `FRAME${i}`));
+    expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 1, indexedEntries: names.length, entryVisits: names.length, openHandles: 0, peakOpenHandles: 4 });
+  });
+
+  test('同時要求は同じ索引を共有する', async () => {
+    clearUgoiraArchiveIndexes();
+    const zipPath = zipFileOf(await buildUgoiraZipBytes());
+
+    const frames = await Promise.all(Array.from({ length: 20 }, (_, i) => readUgoiraFrame(zipPath, `${String(i % 3).padStart(6, '0')}.jpg`)));
+
+    expect(frames.map((frame) => frame?.toString('utf8'))).toEqual(Array.from({ length: 20 }, (_, i) => `FRAME${i % 3}`));
+    expect(ugoiraArchiveIndexStats().entryVisits).toBe(3);
+  });
+
+  test('保持する索引と同時FDを上限内に抑え、読み取り終了時にハンドルを解放する', async () => {
+    clearUgoiraArchiveIndexes();
+    const paths = await Promise.all(Array.from({ length: 6 }, async (_, i) => zipFileOf(await buildZipBytes({ '000000.jpg': Buffer.alloc(256 * 1024, i) }))));
+
+    const frames = await Promise.all(paths.map((zipPath) => readUgoiraFrame(zipPath, '000000.jpg')));
+    expect(frames.every((frame) => frame?.length === 256 * 1024)).toBe(true);
+    const stats = ugoiraArchiveIndexStats();
+    expect(stats).toMatchObject({
+      peakResidentArchives: 4,
+      peakResidentEntries: 4,
+      entryVisits: 6,
+      openHandles: 0,
+      peakOpenHandles: 4,
+    });
+    expect(stats.residentArchives).toBeLessThanOrEqual(4);
+    expect(stats.residentEntries).toBeLessThanOrEqual(4);
+
+    clearUgoiraArchiveIndexes();
+    expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 0, indexedEntries: 0, residentArchives: 0, residentEntries: 0, openHandles: 0 });
+  });
+
+  test('lease 付き read と別書庫の build が交錯しても resident 容量と FD 枠を循環待ちしない', async () => {
+    clearUgoiraArchiveIndexes();
+    const cached = await Promise.all(Array.from({ length: 4 }, async (_, i) => zipFileOf(await buildZipBytes({ '000000.jpg': `CACHED${i}` }))));
+    for (const zipPath of cached) expect(await ugoiraFramesPresent(zipPath, ['000000.jpg'])).toBe(true);
+    const incoming = await Promise.all(Array.from({ length: 4 }, async (_, i) => zipFileOf(await buildZipBytes({ '000000.jpg': `INCOMING${i}` }))));
+
+    let releaseReads: (() => void) | undefined;
+    const readGate = new Promise<void>((resolve) => {
+      releaseReads = resolve;
+    });
+    let stoppedReads = 0;
+    let allReadsStopped: (() => void) | undefined;
+    const readsStopped = new Promise<void>((resolve) => {
+      allReadsStopped = resolve;
+    });
+    setUgoiraBeforeReadHandleSlotForTest(async () => {
+      stoppedReads++;
+      if (stoppedReads === cached.length) allReadsStopped?.();
+      await readGate;
+    });
+
+    try {
+      const cachedReads = cached.map((zipPath) => readUgoiraFrame(zipPath, '000000.jpg'));
+      await readsStopped;
+      const incomingReads = incoming.map((zipPath) => readUgoiraFrame(zipPath, '000000.jpg'));
+
+      await vi.waitFor(() => expect(ugoiraArchiveIndexStats().residentWaiters).toBe(incoming.length));
+      expect(ugoiraArchiveIndexStats()).toMatchObject({ residentArchives: 4, residentEntries: 4, residentWaiters: 4, openHandles: 0 });
+      releaseReads?.();
+
+      const frames = await Promise.all([...cachedReads, ...incomingReads]);
+      expect(frames.map((frame) => frame?.toString('utf8'))).toEqual([...Array.from({ length: 4 }, (_, i) => `CACHED${i}`), ...Array.from({ length: 4 }, (_, i) => `INCOMING${i}`)]);
+      const settled = ugoiraArchiveIndexStats();
+      expect(settled).toMatchObject({ residentWaiters: 0, openHandles: 0, peakResidentArchives: 4, peakResidentEntries: 4, peakOpenHandles: 4 });
+      // 待ち手は fresh index の lease 取得後に一斉に起きるため、再開順によっては次の
+      // reserve が、読み終えた leased index を cache から外す。lease 解放後も最後の1件から
+      // 上限4件までが cache に残るのはいずれも正しく、終了時の resident exact 4 は保証では
+      // ない。ここで守るべきなのは下限1と容量上限、上の全frame・peak・FD・waiterの不変条件。
+      expect(settled.residentArchives).toBeGreaterThanOrEqual(1);
+      expect(settled.residentArchives).toBeLessThanOrEqual(4);
+      expect(settled.residentEntries).toBe(settled.residentArchives);
+
+      clearUgoiraArchiveIndexes();
+      expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 0, indexedEntries: 0, residentArchives: 0, residentEntries: 0, residentWaiters: 0, openHandles: 0 });
+    } finally {
+      releaseReads?.();
+      setUgoiraBeforeReadHandleSlotForTest(null);
+      clearUgoiraArchiveIndexes();
+    }
+  });
+
+  test('stat 待機中に LRU から失効した索引を再登録せず、現在の索引を取り直す', async () => {
+    clearUgoiraArchiveIndexes();
+    const first = zipFileOf(await buildZipBytes({ '000000.jpg': 'FIRST' }));
+    expect(await ugoiraFramesPresent(first, ['000000.jpg'])).toBe(true);
+
+    const originalStat = fs.promises.stat.bind(fs.promises);
+    let resumeStat: (() => void) | undefined;
+    const statStopped = new Promise<void>((resolveStopped) => {
+      vi.spyOn(fs.promises, 'stat').mockImplementation(async (filePath, options) => {
+        if (filePath === first && !resumeStat) {
+          await new Promise<void>((resolve) => {
+            resumeStat = resolve;
+            resolveStopped();
+          });
+        }
+        return originalStat(filePath, options as never);
+      });
+    });
+
+    try {
+      const pending = ugoiraFramesPresent(first, ['000000.jpg']);
+      await statStopped;
+      const others = await Promise.all(Array.from({ length: 4 }, async (_, i) => zipFileOf(await buildZipBytes({ '000000.jpg': `OTHER${i}` }))));
+      for (const zipPath of others) expect(await ugoiraFramesPresent(zipPath, ['000000.jpg'])).toBe(true);
+      resumeStat?.();
+
+      expect(await pending).toBe(true);
+      expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 4, indexedEntries: 4, residentArchives: 4, residentEntries: 4, entryVisits: 6 });
+    } finally {
+      resumeStat?.();
+      vi.restoreAllMocks();
+    }
+  });
+
+  test('同じパスのファイルが置き換われば古い索引を失効する', async () => {
+    clearUgoiraArchiveIndexes();
+    const zipPath = zipFileOf(await buildZipBytes({ '000000.jpg': 'OLD' }));
+    expect((await readUgoiraFrame(zipPath, '000000.jpg'))?.toString('utf8')).toBe('OLD');
+
+    const replacement = `${zipPath}.replacement`;
+    fs.writeFileSync(replacement, await buildZipBytes({ '000000.jpg': 'NEW', '000001.jpg': 'ADDED' }));
+    fs.renameSync(replacement, zipPath);
+
+    expect((await readUgoiraFrame(zipPath, '000001.jpg'))?.toString('utf8')).toBe('ADDED');
+    expect(ugoiraArchiveIndexStats().entryVisits).toBe(3);
+    fs.rmSync(zipPath);
+    expect(fs.existsSync(zipPath)).toBe(false);
+  });
+
+  test('壊れたZIPを索引として残さず拒否する', async () => {
+    clearUgoiraArchiveIndexes();
+    const zipPath = zipFileOf(Buffer.from('not a zip'));
+
+    await expect(readUgoiraFrame(zipPath, '000000.jpg')).rejects.toThrow();
+    expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 0, indexedEntries: 0, openHandles: 0 });
   });
 });

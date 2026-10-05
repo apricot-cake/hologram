@@ -291,7 +291,7 @@ export function VirtualGridHost({ model, cell, nav, anchor, onBackgroundClick }:
     isScrolling,
     containerRef,
     style: { outline: 'none' }, // 選択はカードで示し、一覧全体にはフォーカス枠を出さない。
-    tabIndex: -1, // 昔のグリッドはタブの止まり位置ではなかった。そのままにしておく
+    tabIndex: nav ? 0 : -1,
     render: cell,
   });
 

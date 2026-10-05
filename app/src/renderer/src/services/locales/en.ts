@@ -1,4 +1,7 @@
+import { saveFolderCloudMessages } from '../../../../shared/save-folder-cloud-messages.ts';
+
 export default {
+  ...saveFolderCloudMessages.en,
   posterPreviousNameMatch: 'Previous name: {name}',
   posterPreviousDisplayName: 'Previous display name',
   posterPreviousHandle: 'Previous username',
@@ -315,7 +318,7 @@ export default {
   libraryBackupNone: 'Not set',
   saveFolderSubTitle: 'Library location (move)',
   saveFolderChange: 'Change',
-  saveFolderHint: 'Where posts are stored. Changing it creates a Hologram-library folder inside the folder you pick and moves the existing library there (your data is kept until the move completes).',
+  saveFolderHint: 'Where posts are stored. Changing it creates Hologram\\Library inside the folder you pick and moves the existing library there (your data is kept until the move completes).',
   saveFolderMoving: 'Moving…',
   saveFolderMoved: 'Save folder changed ({count} moved)',
   saveFolderProgressTitle: 'Migration progress',
@@ -329,9 +332,6 @@ export default {
   saveFolderErrCopyFailed: 'Migration failed (your data is safe)',
   saveFolderErrLibraryMissing: 'Can\'\'t change it — the save folder is missing (use "Point to a different folder" instead)',
   saveFolderErrGeneric: 'Could not change the save folder',
-  saveFolderCloudWarn: 'This folder looks like it syncs with {name}',
-  saveFolderCloudWarnDesc: 'The library is rewritten while you use it, so a sync client can race those writes and corrupt it. Choose a folder outside sync. For a cloud copy, save a manually created backup file in a synced folder instead.',
-  saveFolderCloudWarnOk: 'Change anyway',
   exportZip: 'Export images & videos',
   importZip: 'Restore from a backup file',
   importImages: 'Import media',
@@ -340,6 +340,7 @@ export default {
   dropOverlayHint: 'Drop to import into your library',
   dropImportOk: 'Import',
   dropImportPreparing: 'Checking import contents…',
+  dropImportTooLarge: 'This folder is too large to scan safely',
   dropImportStackFolders: 'Create an album for each folder',
   dropImportProgress: 'Importing {count} items…',
   dropNothingToImport: 'Nothing importable was found',
@@ -394,7 +395,6 @@ export default {
   confirmClear: 'Delete all posts?',
   confirmClearDesc: 'Every post (image and metadata) in the save folder will be deleted. This cannot be undone.',
   confirmOk: 'Delete',
-  confirmCancel: 'Cancel',
   cleared: 'Data deleted',
   clearBlocked: 'Delete-all was cancelled — the config file may be damaged. Restart the app and try again.',
   shortcutsSectionTitle: 'Shortcuts',
@@ -552,5 +552,7 @@ export default {
   confirmDeleteSelected: '{count, plural, one {Delete {count} post?} other {Delete {count} posts?}}',
   confirmDeleteGroup: '{count, plural, one {Delete this post ({count} record)?} other {Delete this post ({count} records)?}}',
   deletedN: '{count, plural, one {{count} post deleted} other {{count} posts deleted}}',
+  deleteFailedN: 'Failed to delete {count, plural, one {{count} post} other {{count} posts}}',
+  deletePartial: '{deletedCount, plural, one {{deletedCount} post deleted} other {{deletedCount} posts deleted}}. Failed to delete {count, plural, one {{count} post} other {{count} posts}}',
   tagsSavedN: '{count, plural, one {Tags saved for {count} post} other {Tags saved for {count} posts}}',
 } as const;

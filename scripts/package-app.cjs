@@ -14,7 +14,7 @@ async function packageApp() {
     ...forgeConfig.packagerConfig,
     dir: appDir,
     out: forgeConfig.outDir,
-    name: appPackage.name,
+    name: appPackage.productName || appPackage.name,
     executableName: 'Hologram',
     electronVersion: appPackage.devDependencies.electron,
     platform: 'win32',

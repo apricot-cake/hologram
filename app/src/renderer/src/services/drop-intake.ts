@@ -41,7 +41,9 @@ const reload = async () => {
 };
 
 function reportImportError(error: string | undefined): void {
-  notify(error === 'library-missing' ? t('saveFolderErrLibraryMissing') : t('importFailed'));
+  if (error === 'library-missing') notify(t('saveFolderErrLibraryMissing'));
+  else if (error === 'scan-limit') notify(t('dropImportTooLarge'));
+  else notify(t('importFailed'));
 }
 
 async function runImport(files: DroppedFile[], stackFolders: boolean): Promise<void> {
@@ -68,7 +70,7 @@ async function runImport(files: DroppedFile[], stackFolders: boolean): Promise<v
  */
 export async function handleDroppedPaths(paths: string[]): Promise<void> {
   if (!paths.length) return;
-  confirmOpen({
+  const openId = confirmOpen({
     message: t('dropImportPreparing'),
     okLabel: t('dropImportOk'),
     cancelLabel: t('confirmCancel'),
@@ -81,12 +83,13 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
   try {
     res = await collectDroppedPaths(paths);
   } catch {
+    if (!confirmUpdate({}, openId)) return;
     confirmClose();
     notify(t('importFailed'));
     return;
   }
-  // 走査中にキャンセルされたら、結果を表示も取り込みもせず終える。
-  if (!confirmUpdate({})) return;
+  // キャンセル後の別操作の確認画面へ、古い走査結果を反映しない。
+  if (!confirmUpdate({}, openId)) return;
   if (res.error) {
     confirmClose();
     reportImportError(res.error);
@@ -102,25 +105,28 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
     await runImport(res.files, false);
     return;
   }
-  confirmUpdate({
-    message: t('dropImportConfirm', { count: res.files.length }),
-    description: undefined,
-    okLabel: t('dropImportOk'),
-    cancelLabel: t('confirmCancel'),
-    icon: 'help',
-    optionLabel: res.hasFolder ? t('dropImportStackFolders') : undefined,
-    optionDefault: false,
-    optionDescription: undefined,
-    optionPreviewItems: res.hasFolder
-      ? res.groups.map((group) => ({
-          label: group.isRoot ? t('dropImportRootFolder', { name: group.rootName }) : group.name,
-          description: t('dropImportFolderItem', { count: group.mediaCount }),
-          imageSrc: group.previewDataUrl,
-          section: group.rootName,
-        }))
-      : undefined,
-    okDestructive: false,
-    loading: false,
-    onOk: ({ option }) => void runImport(res.files, option === true),
-  });
+  confirmUpdate(
+    {
+      message: t('dropImportConfirm', { count: res.files.length }),
+      description: undefined,
+      okLabel: t('dropImportOk'),
+      cancelLabel: t('confirmCancel'),
+      icon: 'help',
+      optionLabel: res.hasFolder ? t('dropImportStackFolders') : undefined,
+      optionDefault: false,
+      optionDescription: undefined,
+      optionPreviewItems: res.hasFolder
+        ? res.groups.map((group) => ({
+            label: group.isRoot ? t('dropImportRootFolder', { name: group.rootName }) : group.name,
+            description: t('dropImportFolderItem', { count: group.mediaCount }),
+            imageSrc: group.previewDataUrl,
+            section: group.rootName,
+          }))
+        : undefined,
+      okDestructive: false,
+      loading: false,
+      onOk: ({ option }) => void runImport(res.files, option === true),
+    },
+    openId,
+  );
 }

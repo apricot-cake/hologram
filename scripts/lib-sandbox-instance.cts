@@ -1,46 +1,12 @@
 'use strict';
-// サンドボックス検証インスタンスがどのツリーに属すか（#640）。
-//
-// サンドボックスの CDP ポートは、かつて「9333から最初に空いているポート」で
-// あり、起動元のツリー自身の .sandbox/instance.json に記録されていた。ポート
-// をツリーに結び付けるものは何も無かったので、サンドボックスを動かす2つの
-// worktree は9333を交互に握り合う — そして自分自身のインスタンスが消えた後に
-// CDP_PORT=9333 で再接続したセッションは、「別の」ツリーのアプリを駆動して
-// しまう。呼び出しはどれも成功するので、誰も気付かない: これがこのモジュールが
-// 存在する理由となる失敗であり、番人を明示的にしなければならない理由でもある。
-//
-// 仕組みは2つあり、番人として機能するのは2つ目だけ:
-//   1. 基準ポートはツリーのパスから導出されるので、あるツリーは常に同じポート
-//      へ戻り、2つのツリーが同じ番号から始まることはない。これは便宜上のもの
-//      でしかない — ハッシュの衝突や使用中のポートは、それでも起こり得る。
-//   2. そのポートを実際に「listen している」プロセスを、このツリーが自分の
-//      インスタンスを起動した時に記録した pid と比較する。
-//      scripts/cdp-verify.cts は、他の誰かが握っているサンドボックスポートを
-//      拒む。
-//
-// 仕組み2は、かつて CDP のページターゲットの URL から識別を読み取っていた:
-// レンダラーは <tree>/app/out/renderer/index.html から読み込まれていたので、
-// file:// の URL がそのツリーを名指していた。#7 はレンダラーを
-// app://bundle/index.html へ移した。これはどのツリーでも同じ文字列になる —
-// その識別は静かに盲目になっていたはずで、それこそが #640 の扱う失敗モード
-// そのもの。listen している pid はアプリが何を読み込むかから一切導出されない
-// ので、この移行を生き延びる（そして URL には決して答えられなかった
-// `electron-vite dev` のインスタンスにも答えられる）。
-//
-// Windows 限定の検索。これはこのモジュールにこれまで負っていなかった代償を
-// 課すわけではない: それを取り巻く検証ハーネスはすでに user32 へシェルアウト
-// している（cdp-verify.cts）。それ以外の場所ではこの検索は null を返す＝
-// 「分からない」であり、呼び出し元は null を、メッセージでその理由を言わずに
-// 「問題なし」と読んではならない。
+// 単一の隔離検証アプリの記録と、CDP 接続先の PID 照合。
+// ポートは固定し、主作業ツリーから起動する。古い記録による誤操作を防ぐ。
 
-const crypto = require('node:crypto');
 const cp = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-// :9222 は本物のアプリ（docs/開発ガイド.md の「デスクトップアプリを起動する」節）なので、サンドボックスはそれより上に住む。
-const PORT_MIN = 9333;
-const PORT_SPAN = 100;
+const SANDBOX_PORT = 9333;
 
 interface Instance {
   pid: number;
@@ -53,16 +19,14 @@ interface Instance {
 }
 
 function isSandboxPort(port: number): boolean {
-  return Number.isInteger(port) && port >= PORT_MIN && port < PORT_MIN + PORT_SPAN;
+  return port === SANDBOX_PORT;
 }
 
-// 同じツリー → 常に同じポート。違うツリー → （ほぼ常に）違うポート。Windows
-// は同じパスをいくつもの綴りで書けるので、ハッシュ化の前にキーを正規化する —
-// そうしないと `C:\x` と `c:/x` が2つのツリーとして扱われてしまう。
-function sandboxPortBase(tree: string): number {
-  const key = path.resolve(tree).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-  const digest = crypto.createHash('sha256').update(key).digest();
-  return PORT_MIN + (digest.readUInt16BE(0) % PORT_SPAN);
+// .git がファイルのリンク worktree から共有の検証環境を操作しない。
+function assertMainWorkingTree(tree: string): void {
+  if (!fs.statSync(path.join(tree, '.git')).isDirectory()) {
+    throw new Error('開発・実機検証は主作業ツリーで一件ずつ行ってください。');
+  }
 }
 
 function sandboxRoot(tree: string): string {
@@ -136,10 +100,9 @@ function foreignSandboxAt(port: number, tree: string, lookup: (p: number) => num
 }
 
 module.exports = {
-  PORT_MIN,
-  PORT_SPAN,
+  SANDBOX_PORT,
+  assertMainWorkingTree,
   isSandboxPort,
-  sandboxPortBase,
   sandboxRoot,
   instanceFile,
   readInstance,

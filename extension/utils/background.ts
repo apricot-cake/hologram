@@ -1,3 +1,4 @@
+import { createDiagnosticAdmission, DIAGNOSTIC_ALARM, DIAGNOSTIC_RATE_KEY } from './diagnostic-admission.ts';
 import { selectPostMedia } from './select-post-media.ts';
 import { acquisitionComplete } from './acquisition-result.ts';
 import { CaptureMetadataSchema } from '../../native-host/protocol.mts';
@@ -13,7 +14,7 @@ import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../.
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveMediaRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { getNativeHost } from './native-host.ts';
-import { verificationHost, verificationKey, showVerificationBadge } from './verification-tabs.ts';
+import { verificationHost, verificationKey, showVerificationBadge, setVerificationRoutingReady } from './verification-tabs.ts';
 import { EXT_BUILD_ID, LOCAL_BUILD_RELOAD_QUIET_MS, LOCAL_BUILD_RELOAD_STATE_KEY, LOCAL_BUILD_RELOAD_WORK_MS, bulkActivity, captureActivity, createLocalBuildReloadGate, shouldReloadFor } from './local-build-reload.ts';
 import type { LocalBuildReloadState } from './local-build-reload.ts';
 import { buildWebMeta } from './extractor/web-meta.ts';
@@ -27,11 +28,12 @@ import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
 import type { InjectFailureKind } from './inject-failure.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
-import { saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
+import { beginQueuedSave, bindQueuedSave, markQueuedSaveNotSent, markQueuedSaveUnknown, removeQueuedSave, saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
 import { selectedMediaContextInPage } from './selected-media-context.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
 
 export function startBackground(): void {
+  setVerificationRoutingReady(false);
   // --- キャプチャの診断 ------------------------------------------------------
   // native host の capture.log に届かなかったログのエントリのための
   // フォールバック用リングバッファ（host が起動に失敗することこそ、
@@ -185,7 +187,7 @@ export function startBackground(): void {
     saveId?: string | null;
     captureId?: string | null;
     reached?: SaveStage[];
-    // #203: 送信に unreachable の印が付いた 'bridge' の失敗で、
+    // #203: 未送信または結果不明になった 'bridge' の保存で、
     // save-queue.ts への退避を試みた後にセットする＝エントリが今再試
     // 行用にキューへ入っていれば true、何も保持できなければ false。
     // それ以外のすべての失敗（このキューが一切扱わない経路、host が
@@ -375,8 +377,9 @@ export function startBackground(): void {
     // を別々に識別できることこそ、このログに欠けていた区別のすべて
     // だ: 後に `save`/`begin` が来ない `activate` の行は、ユーザーが
     // UI を開いてやめたことを意味する（#519）。
+    const site = getHostname(tab.url) || 'unknown';
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
-      logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
+      logCapture({ stage: 'activate', phase: 'skip', site, category: 'bulk-injection', message: 'Page is not eligible for content script injection' });
       return;
     }
     // ログの行より前に置く。ログの行自体が native の往復であり、し
@@ -385,7 +388,11 @@ export function startBackground(): void {
     // は完全に何もしないままになってしまう＝まさに #269 が可視化しよ
     // うとしている失敗そのものだ。
     localBuildReloadGate.begin(captureActivity(tab.id));
-    logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto: true });
+    // executeScript は、注入先のコードが実行を始めてから resolve する。
+    // したがって入口は await より前に記録し、ページから届く bulk/begin
+    // より必ず先に並べる。begin は注入の成功を断言せず、「試みを開始した」
+    // という既存の phase 契約だけを表す。
+    logCapture({ stage: 'activate', phase: 'begin', site, category: 'bulk-injection', message: 'Content script injection started' });
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -397,12 +404,17 @@ export function startBackground(): void {
       clearInjectFailure(tab.id);
       injectFailedTabs.delete(tab.id);
       return;
-    } catch (error) {
-      console.error('Failed to inject content script:', error);
+    } catch {
+      // 例外文字列は Chrome が対象 URL を埋め込むことがあるため、コンソール
+      // にも転記しない。永続診断と同じ固定文だけを残す。
+      console.error('Failed to inject content script');
       // keepLocal: この行は、何もしなかったクリックの唯一の記録で、
       // 診断ページはローカルのリングバッファを読む＝一度も始まらな
       // かった保存には、他に読み返せる場所がない（#269）。
-      logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
+      // Chrome の error.message は対象 URL を引用することがあるため、その
+      // 文字列自体をログへ渡さない。失敗した段階とサイトは category/site
+      // で特定でき、message は秘密を含まない固定文にする。
+      logCapture({ stage: 'activate', phase: 'fail', site, category: 'bulk-injection', message: 'Content script injection failed' }, true);
       localBuildReloadGate.end(captureActivity(tab.id)); // UI が一切立ち上がらなかったので、保護してやる義理もない
       await alertInjectFailure(tab.id, true);
     }
@@ -620,16 +632,40 @@ export function startBackground(): void {
     const postUrl = meta.url || tab.url || '';
     const metaOk = acquisitionComplete(meta, []);
     const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { retryOf, mediaType, media: [], source: 'web', saveIncomplete: !metaOk } });
-    const request: SaveMediaRequest = { type: 'saveMedia', captureId, saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
+    let request: SaveMediaRequest = { type: 'saveMedia', captureId, requestNonce: generateRequestNonce(), saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
+    const requestHost = targetHost ?? (await getNativeHost());
+    const finishInitialSave = beginQueuedSave(request, requestHost);
 
+    // service worker が送信中に終了しても要求そのものを失わないよう、host
+    // へ渡す前に耐久化する。削除するのは ack または明示拒否の後だけ。
+    // 送信前から結果不明として記録する。postMessage直後にworkerが終了して
+    // catchへ到達しない窓でも、旧hostへ無条件再送されないためである。
+    const staged = await stashFailedSave(request, logCapture, requestHost, false, true);
+    if (!staged) {
+      finishInitialSave();
+      throw trace.fail('queue', 'Save queue is full; request was not sent');
+    }
     let ack: BridgeAck;
     try {
-      ack = await bridgeSend(request, targetHost);
+      try {
+        const binding = await queryForResend(postUrl, captureId, requestHost);
+        if (!binding.receiptCapable || !binding.saveFolder) throw new Error('Native host does not support library-bound saves');
+        request = await bindQueuedSave(request, binding.saveFolder, requestHost);
+      } catch (error: any) {
+        throw deliveryError(error?.message || 'Save library unavailable', 'not-sent');
+      }
+      ack = await bridgeSend(request, requestHost);
     } catch (err: any) {
       const failure = trace.fail('bridge', err?.message || 'bridge save failed');
-      if (err?.unreachable) failure.queued = await stashFailedSave(request, logCapture, targetHost);
+      if (err?.delivery === 'rejected' && staged) await removeQueuedSave(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if ((err?.delivery === 'not-sent' || err?.delivery === 'deferred') && staged) await markQueuedSaveNotSent(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      failure.queued = err?.delivery === 'rejected' ? undefined : staged;
+      finishInitialSave();
       throw failure;
     }
+    if (staged) await removeQueuedSave(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+    finishInitialSave();
     trace.passed('bridge');
     if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();
@@ -688,7 +724,7 @@ export function startBackground(): void {
     }
     trace.passed('metadata');
 
-    // API が扱わない項目と、明示されたアクセス制限だけを DOM で補う。
+    // API が扱わない項目と、埋め込み対象外の投稿を検証済みの DOM 情報で補う。
     const domFilled = mergeDomMeta(meta, domMeta);
     const metaOk = acquisitionComplete(meta, domFilled);
 
@@ -797,13 +833,13 @@ export function startBackground(): void {
   // を書き込む）へメッセージを送り、その ack で解決する。host は短命
   // だ: Chrome は接続ごとにそれを起動するので、デスクトップアプリが
   // 動いていなくてもこれは動く。
-  // save-queue.ts が「host が一度も答えなかった」を「host が答えて
-  // 拒否した」と区別できるよう、エラーに印を付ける（#203）。これは文
+  // save-queue.ts が「未送信」「送信後の結果不明」「host の明示拒否」を
+  // 区別できるよう、エラーに印を付ける（#203）。これは文
   // 字列の一致ではなく機構の印だ＝意図してこうしている。再試行の対象
   // にするかどうかの判定が、native-error.ts 自身の狭く Chrome の文言
   // 変更に対して壊れやすい分類を絶対に引き継がないように。
-  function unreachableError(message: string): Error {
-    return Object.assign(new Error(message), { unreachable: true });
+  function deliveryError(message: string, delivery: 'not-sent' | 'unknown' | 'rejected' | 'deferred'): Error {
+    return Object.assign(new Error(message), { delivery });
   }
 
   async function bridgeSend(message: HostRequest, targetHost?: string): Promise<BridgeAck> {
@@ -829,11 +865,11 @@ export function startBackground(): void {
       try {
         port = chrome.runtime.connectNative(nativeHost);
       } catch (error: any) {
-        reject(unreachableError(`Native host unavailable: ${error?.message || error}`));
+        reject(deliveryError(`Native host unavailable: ${error?.message || error}`, 'not-sent'));
         return;
       }
 
-      timer = setTimeout(() => finish(unreachableError('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
+      timer = setTimeout(() => finish(deliveryError('Native host timed out', 'unknown')), NATIVE_HOST_TIMEOUT_MS);
 
       // 呼び出し元それぞれが持つ「応答とはどういうものか」という考え
       // ではなく、共有された契約を通して読む（#400）: これ以前は、
@@ -849,19 +885,23 @@ export function startBackground(): void {
         // 同じ理由で、違うスタンプ: ディスク上にあるローカルビルドが
         // どれか（#650）。
         noteHostBuild(res.extBuild);
-        // 下の unreachableError にはしない: host は実際に答えた。た
+        // 結果不明にはしない: host は実際に答えた。た
         // だ拒否しただけだ（#492 の post-unavailable など）＝
         // save-queue.ts は、繰り返すだけになる答えを絶対に再試行して
         // はいけない（#203）。
         if (res.ok) finish(null, res.ack);
-        else finish(new Error(res.error));
+        else finish(deliveryError(res.error, res.code === 'request-in-progress' ? 'unknown' : res.code === 'library-changed' ? 'deferred' : 'rejected'));
       });
 
       port.onDisconnect.addListener(() => {
-        finish(unreachableError(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)'));
+        finish(deliveryError(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)', 'unknown'));
       });
 
-      port.postMessage(message);
+      try {
+        port.postMessage(message);
+      } catch (error: any) {
+        finish(deliveryError(`Native host post failed: ${error?.message || error}`, 'not-sent'));
+      }
     });
   }
 
@@ -869,7 +909,7 @@ export function startBackground(): void {
   // この要求は一覧取り込みにもホバーボタンにも使い、再試行キューには
   // 入れない。
   function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null, targetHost?: string) {
-    return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason }, targetHost);
+    return bridgeSend({ type: 'savePost', captureId, requestNonce: generateRequestNonce(), saveId, metadata: record, metaOk, metaReason }, targetHost);
   }
 
   // host が実際にその保存のために記録したと言う画像（位置ベース。
@@ -945,7 +985,7 @@ export function startBackground(): void {
   // host の応答の両半分に答える（#158）: 何が保存済みか、そして何が
   // ライブラリのゴミ箱にあるか。`trashed` はまばら（該当する url だ
   // け）で、それが存在する前にビルドされた host からは空になる。
-  async function queryBridge(urls: string[]): Promise<{ results: SavedResults; trashed: TrashedResults }> {
+  async function queryBridge(urls: string[], requestIds: string[] = []): Promise<{ results: SavedResults; trashed: TrashedResults; requests: Record<string, import('../../native-host/protocol.mts').RequestReceipt>; receiptCapable: boolean }> {
     let port: chrome.runtime.Port;
     try {
       port = await getQueryPort();
@@ -974,13 +1014,13 @@ export function startBackground(): void {
           // もある（#650）: このポートはブラウジングのセッション全体
           // にわたって開いたままだ。
           noteHostBuild(res.extBuild);
-          resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {} } : { results: {}, trashed: {} });
+          resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {}, requests: res.ack.requests || {}, receiptCapable: (res.protocolVersion || 0) >= 5 } : { results: {}, trashed: {}, requests: {}, receiptCapable: false });
         },
         reject,
         timer,
       });
       try {
-        port.postMessage({ type: 'query', id, urls } satisfies HostRequest);
+        port.postMessage({ type: 'query', id, urls, requestIds } satisfies HostRequest);
       } catch (error: any) {
         pendingQueries.delete(id);
         clearTimeout(timer);
@@ -999,8 +1039,9 @@ export function startBackground(): void {
   // め: バッジのキャッシュではなく新しい読み取り＝キューに座っている
   // エントリこそ、1分前のネガティブな答えが間違っている可能性がある
   // ケースそのものだ。
-  function queryForResend(url: string): Promise<SavedEntry | null> {
-    return queryBridge([url]).then((r) => r.results[url] ?? null);
+  async function queryForResend(url: string, requestId: string, host: string) {
+    const ack = await bridgeSend({ type: 'query', id: 1, urls: url ? [url] : [], requestIds: [requestId] }, host);
+    return { saved: ack.results?.[url] ?? null, receipt: ack.requests?.[requestId] ?? null, receiptCapable: typeof ack.protocolVersion === 'number' && ack.protocolVersion >= 6, saveFolder: ack.saveFolder };
   }
 
   // 以下のすべての引き金から fire-and-forget で呼ぶ: sweep 自身のエ
@@ -1173,7 +1214,7 @@ export function startBackground(): void {
           void sweepSaveQueue(
             {
               send: (request) => bridgeSend(request, targetHost),
-              query: async (url) => (await bridgeSend({ type: 'query', id: 1, urls: [url] }, targetHost)).results?.[url] ?? null,
+              query: (url, requestId) => queryForResend(url, requestId, targetHost),
               log: logCapture,
             },
             targetHost,
@@ -1259,16 +1300,50 @@ export function startBackground(): void {
   let logFlushing = false;
   let logFlushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastLogFlushAt = Number.NEGATIVE_INFINITY;
+  let diagMaintenanceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function logCapture(entry: SaveLogEntry, keepLocal = false): void {
+  function enqueueLog(entry: SaveLogEntry, keepLocal: boolean, alreadyStored = false): void {
     const full = Object.assign({ ts: new Date().toISOString() }, entry);
-    if (keepLocal) stashLogLocally(full);
+    if (keepLocal && !alreadyStored) stashLogLocally(full);
+    if (alreadyStored) scheduleDiagMaintenance();
     if (logQueue.length >= LOG_QUEUE_MAX) {
-      if (!keepLocal) stashLogLocally(full); // ログからは落ちるが、ディスク上には保つ
+      if (!keepLocal && !alreadyStored) stashLogLocally(full); // ログからは落ちるが、ディスク上には保つ
       return;
     }
-    logQueue.push({ entry: full, stashed: keepLocal });
+    // 同期的な push が診断の順序そのもの。flush 中でも activate/begin と、
+    // executeScript 内から届く bulk/begin はこの FIFO にその順で入り、先行
+    // host の ack/timeout を待たずに利用者の注入処理を開始できる。
+    logQueue.push({ entry: full, stashed: keepLocal || alreadyStored });
     scheduleLogFlush();
+  }
+
+  const diagnosticAdmission = createDiagnosticAdmission({
+    read: () =>
+      new Promise((resolve, reject) => {
+        chrome.storage.local.get(DIAGNOSTIC_RATE_KEY, (data) => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve(data?.[DIAGNOSTIC_RATE_KEY]);
+        });
+      }),
+    write: (state, summary) =>
+      new Promise((resolve, reject) => {
+        const values: Record<string, unknown> = { [DIAGNOSTIC_RATE_KEY]: state };
+        if (summary) values[DIAG_PREFIX + summary.ts + '_rate'] = summary;
+        chrome.storage.local.set(values, () => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve();
+        });
+      }),
+    alarm: async (when) => {
+      await chrome.alarms.create(DIAGNOSTIC_ALARM, { when });
+    },
+    emit: enqueueLog,
+  });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === DIAGNOSTIC_ALARM) diagnosticAdmission.wake();
+  });
+  function logCapture(entry: SaveLogEntry, keepLocal = false): void {
+    diagnosticAdmission.submit(entry, keepLocal);
   }
 
   function scheduleLogFlush() {
@@ -1351,6 +1426,21 @@ export function startBackground(): void {
       const key = `${DIAG_PREFIX}${entry.ts}_${Math.floor(Math.random() * 1e6)}`;
       chrome.storage.local.set({ [key]: entry }, () => {
         void chrome.runtime.lastError; // クォータなど set のエラーは無視する
+        scheduleDiagMaintenance();
+      });
+    } catch {
+      /* 無視する＝診断情報は必須ではない */
+    }
+  }
+
+  // 失敗1件ごとの set に全ストレージ走査を連結しない。大量の失敗が来ても
+  // get(null) はひとまとまりにつき一度だけで、上の入力上限と合わせて
+  // ページ由来の入力が storage 全件読取の増幅器になることを防ぐ。
+  function scheduleDiagMaintenance() {
+    if (diagMaintenanceTimer !== null) return;
+    diagMaintenanceTimer = setTimeout(() => {
+      diagMaintenanceTimer = null;
+      try {
         chrome.storage.local.get(null, (all) => {
           if (chrome.runtime.lastError) return;
           const keys = Object.keys(all)
@@ -1358,10 +1448,10 @@ export function startBackground(): void {
             .sort();
           if (keys.length > DIAG_KEEP) chrome.storage.local.remove(keys.slice(0, keys.length - DIAG_KEEP));
         });
-      });
-    } catch {
-      /* 無視する＝診断情報は必須ではない */
-    }
+      } catch {
+        /* 診断情報は必須ではない */
+      }
+    }, LOG_COOLDOWN_MS);
   }
 
   // そうしなければ chrome://extensions のエラーコンソールだけが持つ
@@ -1416,6 +1506,7 @@ export function startBackground(): void {
     }
     return false;
   });
+  setVerificationRoutingReady(true);
 }
 
 // 保存経路が共有するレコードを組み立てる。
@@ -1432,10 +1523,15 @@ function buildRecord(meta, { capturedAt, postUrl, sendPlatform, replaces, extra 
 }
 
 function generateCaptureId() {
-  const hex = Math.floor(Math.random() * 0xffff)
-    .toString(16)
-    .padStart(4, '0');
-  return `${Date.now()}-${hex}`;
+  // v4 host のcaptureId上限（8 hex）を保つ。要求の高entropy identityは
+  // 別欄requestNonceが担い、hostはpayload hashと併せて衝突を拒否する。
+  return `${Date.now()}-${generateRequestNonce().slice(0, 8)}`;
+}
+
+function generateRequestNonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function missingMediaCount(requestedCount: number, savedCount: number): number {

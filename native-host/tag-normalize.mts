@@ -20,11 +20,41 @@
 // からも読み込める＝post-record.mts と post-key.mts が既に果たしているのと同じ、境界を
 // またぐ役割だ。
 
+// タグ名には従来、表示上の文字数上限がない。V8 の NFKC を病的に遅くするのは長さそのもの
+// ではなく、互換分解後に並べ替えが必要となる非スターターの長い連続である。その仕事量だけを
+// 正規化前の線形走査で制限する。総文字数を制限すると、NFKC が正当に展開した長い結果を次の
+// 保存段階で拒否し、normalizeTagName(normalizeTagName(x)) が成立しなくなるためである。
+// slice は一切しないので、サロゲート対や NFKC の展開結果を途中で切ることもない。
+export const MAX_TAG_NAME_COMBINING_MARK_RUN = 4096;
+
+const COMBINING_MARK = /^\p{Mark}$/u;
+
+export function tagNameInputIsSafe(raw: unknown): raw is string {
+  if (typeof raw !== 'string') return false;
+  let run = 0;
+  for (const character of raw) {
+    // raw の一般カテゴリだけでは不十分である。半濁点 U+FF9F などは raw では Lm だが、
+    // NFKD で結合文字へ互換分解される。文字列全体の NFKC はまさに避けたい二次処理なので、
+    // Unicode scalar 1個ずつ（入力サイズに依存しない仕事）を NFKD し、その展開を数える。
+    // NFKD は NFKC と同じ互換・標準分解を行うため、NFKC が並べ替える列を合成前に見られる。
+    for (const decomposed of character.normalize('NFKD')) {
+      if (COMBINING_MARK.test(decomposed)) {
+        run++;
+        if (run > MAX_TAG_NAME_COMBINING_MARK_RUN) return false;
+      } else {
+        run = 0;
+      }
+    }
+  }
+  return true;
+}
+
 // タグ名を1つ正規化する。文字列でないもの（および、正規化した後に空か空白だけになる
 // 文字列）は '' になる＝呼び出し側がそれを取り除く。ここの他のタグ配列の正規化がどれも
 // 既に文字列でないものを落としているのと揃えてある。
 export function normalizeTagName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw) return '';
+  if (!tagNameInputIsSafe(raw)) throw new RangeError(`Tag name contains more than ${MAX_TAG_NAME_COMBINING_MARK_RUN} consecutive combining marks`);
   let t = raw;
   try {
     t = t.normalize('NFKC');

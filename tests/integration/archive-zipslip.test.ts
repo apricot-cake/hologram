@@ -21,7 +21,8 @@ import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { importCompleteZipToDb, writeCompleteZip } from '../../app/src/main/lib-archive';
+import { writeCompleteZip } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 

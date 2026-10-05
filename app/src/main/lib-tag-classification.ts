@@ -10,7 +10,7 @@ export function syncWorkTags(db: Database.Database) {
     WHERE t.category='character' AND t.workId IS NOT NULL`).run();
 }
 
-export function saveClassifiedTag(db: Database.Database, input: ClassifiedTagInput): number {
+export function saveClassifiedTag(db: Database.Database, input: ClassifiedTagInput, sync = true): number {
   return db.transaction(() => {
     const name = normalizeTagName(input.name);
     if (!name) throw new Error('empty-name');
@@ -27,7 +27,7 @@ export function saveClassifiedTag(db: Database.Database, input: ClassifiedTagInp
     let id = input.id;
     if (id) db.prepare('UPDATE tags SET name=?,category=?,workId=? WHERE id=?').run(name, input.category, input.workId, id);
     else id = Number(db.prepare('INSERT INTO tags(name,category,workId) VALUES(?,?,?)').run(name, input.category, input.workId).lastInsertRowid);
-    syncWorkTags(db);
+    if (sync) syncWorkTags(db);
     db.prepare('UPDATE posts SET updatedAt=? WHERE captureId IN (SELECT postId FROM post_tags WHERE tagId=?)').run(new Date().toISOString(), id);
     return id;
   })();
@@ -58,9 +58,14 @@ export function exportTagClassification(db: Database.Database, postId: string): 
   return { tags, generalTags };
 }
 
-export function importClassifiedTag(db: Database.Database, tag: PortableTagClassification['tags'][number]): number {
-  const workId = tag.workName ? saveClassifiedTag(db, { name: tag.workName, category: 'work', workId: null }) : null;
-  return saveClassifiedTag(db, { name: tag.name, category: tag.category, workId });
+export function importClassifiedTag(db: Database.Database, tag: PortableTagClassification['tags'][number], sync = true): number {
+  const workId = tag.workName ? saveClassifiedTag(db, { name: tag.workName, category: 'work', workId: null }, sync) : null;
+  return saveClassifiedTag(db, { name: tag.name, category: tag.category, workId }, sync);
+}
+
+export function importClassifiedTagVocabulary(db: Database.Database, tags: PortableTagClassification['tags']): void {
+  for (const tag of tags) importClassifiedTag(db, tag, false);
+  if (tags.length) syncWorkTags(db);
 }
 
 export function restoreTagClassification(db: Database.Database, postId: string, value: PortableTagClassification) {

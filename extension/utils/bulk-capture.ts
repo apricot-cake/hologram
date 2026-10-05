@@ -30,6 +30,7 @@ import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
+import { guardCaughtException } from './uncaught-report.ts';
 import type { ContentSite } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
@@ -217,7 +218,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
       answered = true;
       asking = false;
     }, SAVED_QUERY_TIMEOUT_MS);
-    const onAnswer = (res?: CheckSavedResponse) => {
+    const onAnswer = guardCaughtException(logSaveEvent, 'content', 'bulk-saved-answer', (res?: CheckSavedResponse) => {
       if (answered) return;
       answered = true;
       clearTimeout(askTimer);
@@ -235,7 +236,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
       paint();
       schedulePump();
       askSaved(); // このバッチが飛んでいる間に mount された行
-    };
+    });
     // 上の probe に加えて try/catch も（#594）: 尋ねてから呼ぶまでの
     // 窓は小さいがゼロではなく、ここでの無防備な throw は行を mount
     // した MutationObserver のコールバックから出てくる＝収集の残りを
@@ -309,7 +310,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
     // 呼び出しの場でインラインに書くのではなく名前を付ける。それに
     // よって呼び出し自体が、下の try/catch の中でただ1つの文になる
     // （#594）。
-    const onAnswer = (res?: SaveResponse) => {
+    const onAnswer = guardCaughtException(logSaveEvent, 'content', 'bulk-save-answer', (res?: SaveResponse) => {
       if (!deadline.settle()) return; // すでに諦めた投稿への遅れた答え
       busy = false;
       // 下の分岐の中ではなくここで絞り込む: あの条件は選言（ポート自
@@ -353,7 +354,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
       }
       paint();
       schedulePump();
-    };
+    });
     try {
       chrome.runtime.sendMessage(
         {
@@ -489,7 +490,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
   // Esc も停止ボタンと同じくユーザーのもの（#323）。
   const onUserKeyDown = userOnly(onKeyDown);
 
-  const observer = new MutationObserver(async (records) => {
+  const onMutations = guardCaughtException(logSaveEvent, 'content', 'bulk-mutations', async (records: MutationRecord[]) => {
     // これが動くすべてのサイトは、関係する意味で SPA だ: 一覧から離
     // れてもコンテンツはその場で入れ替わるだけで unload は一切発火し
     // ない。だから他の何もこのモードを終わらせることはない（#212 の
@@ -508,6 +509,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
       }
     }
   });
+  const observer = new MutationObserver((records) => onMutations(records));
   observer.observe(document.documentElement, { childList: true, subtree: true });
   addEventListener('scroll', onScroll, { capture: true, passive: true });
   document.addEventListener('keydown', onUserKeyDown, true);
@@ -527,7 +529,9 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
   // 実行が始まった。finish() が書く `bulk` の行と対になっていて、ペー
   // ジが消えて実行が途中で断ち切られても、何もないのではなく、始まり
   // だけが残って終わりがないという形になる（#519）。
-  logSaveEvent({ stage: 'bulk', phase: 'begin', platform: site.platform, url: location.href });
+  // 一覧の完全 URL は保存対象ではなく診断の現在地にすぎない。query / fragment /
+  // userinfo を永続ログへ運ばず、対象サイトと段階を判断できる最小限だけを残す。
+  logSaveEvent({ stage: 'bulk', phase: 'begin', platform: site.platform, site: location.hostname, category: 'bulk-capture', message: 'Bulk capture started' });
 
   harvestFrom(document);
 }

@@ -11,18 +11,33 @@
 // 記述するファイルの隣に置くしかない＝freedesktop.org の .trashinfo と digiKam の .dtrashinfo も
 // 同じ組み方をしている。
 //
-// Electron に依存しない（node の組み込みだけ）ので、隣に並ぶ lib-db-* のモジュールと同じく素の
-// node で単体テストできる。削除の DB 側は呼び出し元の仕事で、このモジュールが触るのは
-// ファイルシステムだけ。
+// Electron に依存せず、復元の非置換移動には既存の native publisher を使う。
+// 隣に並ぶ lib-db-* と同じく Node で検証できる。削除の DB 側は呼び出し元の仕事で、このモジュールが触るのは
+// ファイルシステムと、削除を確定する同期コールバックを扱う。
 
 import fs from 'node:fs';
+import { createArchiveFilePublisher } from './archive-file-publisher.ts';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { parseJsonLoose } from './lib-json.ts';
+import { renameWithoutOverwrite } from './lib-rename.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { itemDirectoryAbsolute, itemDirectoryRelative, itemFileRelative } from '../../../native-host/item-storage.mts';
+import { flatFileName, ownFileName, regularLibraryFile, assertLibraryDirectory, mapItemReferences, normalizeOwnedItemReferences } from './lib-item-references.ts';
+
+// 保存済み索引は起動時にも更新されるので、ZIP から持ち込めるゴミ箱レコードを無制限に
+// 読んではいけない。表示用の listTrashRecords とは違い、索引が要るのはこの小さな3欄だけ。
+const TRASH_INDEX_RECORD_MAX_BYTES = 1024 * 1024;
+const TRASH_INDEX_TOTAL_MAX_BYTES = 16 * TRASH_INDEX_RECORD_MAX_BYTES;
+const TRASH_INDEX_MAX_FILES = 10_000;
+
+export interface TrashIndexRecord {
+  captureId: string;
+  url: string | null;
+  trashedAt: string | null;
+}
 
 // ゴミ箱へ入れたキャプチャが一緒に連れて行かなければならない、DB にしかない状態。どれもレコード
 // の中には無く、外部キーの ON DELETE CASCADE が posts の行と一緒に全部消してしまう。
@@ -44,24 +59,28 @@ export interface TrashCaptureFlags {
 // 共有ストアのアバター（avatars/<urlhash>.<ext>）は意図してそのままにする。その投稿者の
 // キャプチャは全部それを参照しているので、1つの投稿をゴミ箱へ入れることで残りからアイコンを
 // 取り上げてはいけない。
-async function ownedFiles(folder: string, captureId: string, record: any | null, mediaExts: readonly string[]): Promise<Set<string>> {
+async function ownedFiles(folder: string, captureId: string, record: any | null, mediaExts: readonly string[], strict = false): Promise<Set<string>> {
   const targets = new Set<string>();
   for (const e of mediaExts) targets.add(`${captureId}.${e}`);
   if (record) {
-    if (record.image) targets.add(path.basename(record.image));
-    if (record.video) targets.add(path.basename(record.video));
-    if (record.avatarFile && !/^avatars[\\/]/.test(record.avatarFile)) targets.add(path.basename(record.avatarFile));
-    if (record.linkCard?.thumbnailFile) targets.add(path.basename(record.linkCard.thumbnailFile));
+    const add = (file: unknown) => {
+      if (flatFileName(file)) targets.add(file);
+    };
+    add(record.image);
+    add(record.video);
+    add(record.avatarFile);
+    add(record.linkCard?.thumbnailFile);
     for (const m of record.media || []) {
-      if (m?.file) targets.add(path.basename(m.file));
-      if (m?.posterFile) targets.add(path.basename(m.posterFile)); // #119 St1
+      add(m?.file);
+      add(m?.posterFile);
     }
   }
   try {
     for (const f of await fs.promises.readdir(folder)) {
       if (f.startsWith(`${captureId}-media-`) || f.startsWith(`${captureId}-poster.`) || f.startsWith(`${captureId}-avatar.`)) targets.add(f);
     }
-  } catch {
+  } catch (error) {
+    if (strict) throw error;
     /* フォルダが読めない＝上で名指しした対象は、それでも試す価値がある */
   }
   return targets;
@@ -71,61 +90,340 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
 // 押し（自動の期限切れ削除がそれを読む）、restore-post がほかのどこからも得られない DB にしか
 // ない状態（tags / userKind / tagReviewed）を載せる。localViewCount は record 自体が既に運ぶ。
 //
-// 全体をできる範囲でやる。もう無いファイルは単に移さないし、レコードの書き込みに失敗しても、
-// ファイルはゴミ箱に入ったまま自動の期限切れ削除の対象にならないだけ。投稿をライブラリから
-// 消すのは呼び出し元の DB 側の半分。ここが例外を投げてそれを取り消してはいけない。
-export async function trashCapture(opts: { folder: string; trashDir: string; mediaExts: readonly string[]; captureId: string; record: any | null; flags?: TrashCaptureFlags | null; retainFiles?: boolean }): Promise<void> {
+// commitDelete がある場合、ファイルとレコードの保存後に DB の同期削除を確定する。
+// 途中の失敗では元のファイルへ戻す。コールバックなしの既存利用は best-effort のまま。
+const pendingTrash = new Set<string>();
+
+export async function trashCapture(opts: { folder: string; trashDir: string; mediaExts: readonly string[]; captureId: string; record: any | null; flags?: TrashCaptureFlags | null; retainFiles?: boolean; commitDelete?: () => void }): Promise<void> {
   const { folder, trashDir, mediaExts, captureId, record, flags } = opts;
-  await fs.promises.mkdir(trashDir, { recursive: true });
   const itemKey = path.basename(itemDirectoryRelative(captureId));
   const itemDir = itemDirectoryAbsolute(folder, captureId);
   const trashItemDir = path.join(trashDir, itemKey);
+  const trashJson = path.join(trashDir, `${captureId}.json`);
+  const strict = !!opts.commitDelete;
+  const lock = path.resolve(itemDir);
+  if (pendingTrash.has(lock)) throw new Error('Post deletion already in progress');
+  pendingTrash.add(lock);
+  const moved: Array<{ src: string; dest: string }> = [];
+  const sharedCopies = new Set<string>();
+  let createdItem = false;
+  let createdJson = false;
   try {
-    if (opts.retainFiles) await fs.promises.cp(itemDir, trashItemDir, { recursive: true });
-    else await fs.promises.rename(itemDir, trashItemDir);
-  } catch {
-    // 移行前の投稿、既に移動済み、または実体を持たない投稿。下で残る直下ファイルを拾う。
-  }
-  await fs.promises.mkdir(trashItemDir, { recursive: true });
-  for (const name of await ownedFiles(folder, captureId, record, mediaExts)) {
-    const src = resolveInSaveFolder(folder, name);
-    if (!src) continue;
-    try {
-      if (opts.retainFiles) await fs.promises.copyFile(src, path.join(trashItemDir, name));
-      else await fs.promises.rename(src, path.join(trashItemDir, name));
-    } catch {
-      /* 見つからない（か、既に移動済み） */
+    if (strict) {
+      if (!record || path.dirname(path.resolve(trashItemDir)) !== path.resolve(trashDir) || path.dirname(path.resolve(trashJson)) !== path.resolve(trashDir)) throw new Error('Invalid trash target');
+      for (const target of [trashItemDir, trashJson]) {
+        try {
+          await fs.promises.lstat(target);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw error;
+        }
+        throw new Error('Trash target already exists');
+      }
     }
+    await fs.promises.mkdir(trashDir, { recursive: true });
+    let sourceItemExists = false;
+    try {
+      if (strict) {
+        await fs.promises.lstat(itemDir);
+        sourceItemExists = true;
+      }
+      if (opts.retainFiles) {
+        // cp は途中で失敗しても作成済みのファイルを残すため、先に所有を記録する。
+        if (strict) createdItem = true;
+        await fs.promises.cp(itemDir, trashItemDir, { recursive: true, force: !strict, errorOnExist: strict });
+      } else {
+        if (strict) await renameWithoutOverwrite(itemDir, trashItemDir);
+        else await fs.promises.rename(itemDir, trashItemDir);
+        if (strict) {
+          createdItem = true;
+          moved.push({ src: itemDir, dest: trashItemDir });
+        }
+      }
+    } catch (error) {
+      if (strict && (sourceItemExists || (error as NodeJS.ErrnoException).code !== 'ENOENT')) throw error;
+      // 移行前の投稿、既に移動済み、または実体を持たない投稿。下で残る直下ファイルを拾う。
+    }
+    await fs.promises.mkdir(trashItemDir, { recursive: true });
+    if (strict) createdItem = true;
+    for (const name of await ownedFiles(folder, captureId, record, mediaExts, strict)) {
+      const src = resolveInSaveFolder(folder, name);
+      if (!src) continue;
+      let sourceExists = false;
+      try {
+        // 候補の大半は存在しない。存在するものだけを動かし、読み取り拒否は失敗にする。
+        if (strict) {
+          await fs.promises.lstat(src);
+          sourceExists = true;
+        }
+        const dest = path.join(trashItemDir, name);
+        if (opts.retainFiles) await fs.promises.copyFile(src, dest, strict ? fs.constants.COPYFILE_EXCL : 0);
+        else {
+          if (strict && fs.existsSync(dest)) throw new Error('Trash media target already exists');
+          if (strict) await renameWithoutOverwrite(src, dest);
+          else await fs.promises.rename(src, dest);
+          if (strict) moved.push({ src, dest });
+        }
+      } catch (error) {
+        if (strict && (sourceExists || (error as NodeJS.ErrnoException).code !== 'ENOENT')) throw error;
+        /* 見つからない（か、既に移動済み） */
+      }
+    }
+    if (!record) return;
+    const names = new Set((await fs.promises.readdir(trashItemDir)).filter((name) => regularLibraryFile(trashDir, `${itemKey}/${name}`)));
+    const r: any = normalizeOwnedItemReferences({ ...record, trashedAt: new Date().toISOString() }, names);
+    // 単独保存へ引き継いだ引用画像は、別の保存単位にあることがある。
+    // 共有元を動かさず、ゴミ箱にはこの投稿だけで復元できるコピーを置く。
+    const copyShared = async (file: string | null) => {
+      if (!file || !file.startsWith('items/') || file.startsWith(`${itemDirectoryRelative(captureId)}/`)) return file;
+      const src = resolveInSaveFolder(folder, file);
+      if (!src) return file;
+      const name = `${createHash('sha256').update(file).digest('hex').slice(0, 16)}-${path.basename(file)}`;
+      // 同じ共有画像を image と media の両方が指すことがある。
+      const dest = path.join(trashItemDir, name);
+      if (!strict) await fs.promises.copyFile(src, dest);
+      else if (!sharedCopies.has(dest)) {
+        if (fs.existsSync(dest)) throw new Error('Trash shared media target already exists');
+        sharedCopies.add(dest);
+        try {
+          await fs.promises.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') sharedCopies.delete(dest);
+          throw error;
+        }
+      }
+      return itemFileRelative(captureId, name);
+    };
+    r.image = await copyShared(r.image);
+    r.video = await copyShared(r.video);
+    r.avatarFile = await copyShared(r.avatarFile);
+    if (r.linkCard) r.linkCard = { ...r.linkCard, thumbnailFile: await copyShared(r.linkCard.thumbnailFile) };
+    r.media = [];
+    const normalized = normalizeOwnedItemReferences(record, names);
+    for (const m of normalized.media || []) r.media.push({ ...m, file: await copyShared(m.file), posterFile: await copyShared(m.posterFile) });
+    if (flags) {
+      if (flags.tags) r.tags = flags.tags;
+      if (flags.tagClassification) r.tagClassification = flags.tagClassification;
+      if (flags.userKind != null) r.userKind = flags.userKind;
+      if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
+      // 空でないときだけ書く。どのフォルダにも属さない投稿が、読み手に解釈させるための空の配列を
+      // 残すべきではない。
+      if (flags.folders?.length) r.folders = flags.folders;
+      if (flags.manualGroups?.length) r.manualGroups = flags.manualGroups;
+    }
+    try {
+      if (strict) {
+        const sidecar = await fs.promises.open(trashJson, 'wx');
+        createdJson = true;
+        try {
+          await sidecar.writeFile(JSON.stringify(r, null, 2), 'utf8');
+        } finally {
+          await sidecar.close();
+        }
+      } else await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
+    } catch (error) {
+      if (strict) throw error;
+      /* できる範囲で＝ゴミ箱自体は働くが、自動の期限切れ削除と重複判定はされない */
+    }
+    opts.commitDelete?.();
+  } catch (error) {
+    if (strict) {
+      // DB の削除は同期トランザクション。失敗なら元の場所へ逆順に戻す。
+      // 復元に失敗したものを、後続の掃除で消してはいけない。
+      const rollbackErrors: unknown[] = [];
+      for (const dest of sharedCopies) {
+        try {
+          await fs.promises.rm(dest, { force: true });
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      for (const move of moved.reverse()) {
+        try {
+          if (fs.existsSync(move.src)) throw new Error('Trash rollback target already exists');
+          await renameWithoutOverwrite(move.dest, move.src);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      if (createdJson && !rollbackErrors.length) {
+        try {
+          await fs.promises.unlink(trashJson);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      if (createdItem && !rollbackErrors.length) {
+        try {
+          await fs.promises.rm(trashItemDir, { recursive: true, force: true });
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], 'Trash deletion rollback failed');
+    }
+    throw error;
+  } finally {
+    pendingTrash.delete(lock);
   }
-  if (!record) return;
-  const r: any = { ...record, trashedAt: new Date().toISOString() };
-  // 単独保存へ引き継いだ引用画像は、別の保存単位にあることがある。
-  // 共有元を動かさず、ゴミ箱にはこの投稿だけで復元できるコピーを置く。
-  const copyShared = async (file: string | null) => {
-    if (!file || !file.startsWith('items/') || file.startsWith(`${itemDirectoryRelative(captureId)}/`)) return file;
-    const src = resolveInSaveFolder(folder, file);
-    if (!src) return file;
-    const name = `${createHash('sha256').update(file).digest('hex').slice(0, 16)}-${path.basename(file)}`;
-    await fs.promises.copyFile(src, path.join(trashItemDir, name));
-    return itemFileRelative(captureId, name);
+}
+
+async function fileDigest(file: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+// 全移動先を確かめてから動かす。DB が確定するまで sidecar と逆方向 journal を保持する。
+export async function restoreTrashCapture(opts: { folder: string; trashDir: string; captureId: string; record: Record<string, any> | null; allowExistingItem: boolean; publisherExecutable?: string; commitRestore: (record: any) => void }): Promise<void> {
+  const { folder, trashDir, captureId, record } = opts;
+  const itemDir = itemDirectoryAbsolute(folder, captureId);
+  const itemKey = path.basename(itemDirectoryRelative(captureId));
+  const lock = path.resolve(itemDir);
+  if (pendingTrash.has(lock)) throw new Error('Post restoration already in progress');
+  pendingTrash.add(lock);
+  const moved: Array<{ src: string; dest: string }> = [];
+  let createdItem = false;
+  let createdItemsParent = false;
+  const trashItem = path.join(trashDir, itemKey);
+  let committed = false;
+  const publisher = createArchiveFilePublisher(opts.publisherExecutable ?? process.env.HOLOGRAM_ARCHIVE_PUBLISHER ?? path.resolve('app/vendor/avif/avif-validator.exe'));
+  const move = async (source: string, destination: string) => {
+    if (!(await publisher.publish(source, destination))) throw new Error('Restore media target already exists');
+    // Windows は標準 MoveFileW、他 OS は既存 hardlink publisher。
+    if (process.platform !== 'win32') await fs.promises.unlink(source);
   };
-  r.image = await copyShared(r.image);
-  r.video = await copyShared(r.video);
-  r.media = await Promise.all((r.media || []).map(async (m: any) => ({ ...m, file: await copyShared(m.file), posterFile: await copyShared(m.posterFile) })));
-  if (flags) {
-    if (flags.tags) r.tags = flags.tags;
-    if (flags.tagClassification) r.tagClassification = flags.tagClassification;
-    if (flags.userKind != null) r.userKind = flags.userKind;
-    if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
-    // 空でないときだけ書く。どのフォルダにも属さない投稿が、読み手に解釈させるための空の配列を
-    // 残すべきではない。
-    if (flags.folders?.length) r.folders = flags.folders;
-    if (flags.manualGroups?.length) r.manualGroups = flags.manualGroups;
-  }
   try {
-    await fs.promises.writeFile(path.join(trashDir, `${captureId}.json`), JSON.stringify(r, null, 2), 'utf8');
-  } catch {
-    /* できる範囲で＝ゴミ箱自体は働くが、自動の期限切れ削除と重複判定はされない */
+    assertLibraryDirectory(folder);
+    assertLibraryDirectory(trashDir);
+    const sources = new Map<string, string>();
+    const add = (name: string, relative: string) => {
+      if (!regularLibraryFile(trashDir, relative)) throw new Error('Invalid restore media');
+      if (sources.has(name)) throw new Error('Ambiguous restore media');
+      sources.set(name, path.join(trashDir, relative));
+    };
+    let nested = false;
+    try {
+      const stat = await fs.promises.lstat(trashItem);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Invalid restore directory');
+      nested = true;
+      for (const name of await fs.promises.readdir(trashItem)) add(name, `${itemKey}/${name}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const wanted = new Set<string>();
+    if (record)
+      mapItemReferences(record, (file) => {
+        const name = ownFileName(captureId, file);
+        if (name) wanted.add(name);
+        return file;
+      });
+    for (const name of await fs.promises.readdir(trashDir)) {
+      if (name === `${captureId}.json`) continue;
+      if ((name.startsWith(`${captureId}.`) || name.startsWith(`${captureId}-`) || wanted.has(name)) && flatFileName(name)) {
+        const stat = await fs.promises.lstat(path.join(trashDir, name));
+        if (stat.isFile() || stat.isSymbolicLink()) add(name, name);
+      }
+    }
+    let existingItem = false;
+    try {
+      const stat = await fs.promises.lstat(itemDir);
+      if (!opts.allowExistingItem || !stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Restore item target already exists');
+      existingItem = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const keep = new Set<string>();
+    for (const [name, src] of sources) {
+      const dest = path.join(itemDir, name);
+      try {
+        await fs.promises.lstat(dest);
+        if (!existingItem || !regularLibraryFile(folder, itemFileRelative(captureId, name)) || (await fileDigest(src)) !== (await fileDigest(dest))) throw new Error('Restore media target already exists');
+        keep.add(name);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    try {
+      assertLibraryDirectory(folder, 'items');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      assertLibraryDirectory(folder);
+      try {
+        await fs.promises.mkdir(path.join(folder, 'items'));
+        createdItemsParent = true;
+      } catch (mkdirError) {
+        if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirError;
+      }
+      assertLibraryDirectory(folder, 'items');
+    }
+    if (!existingItem) {
+      await fs.promises.mkdir(itemDir);
+      createdItem = true;
+    }
+    assertLibraryDirectory(folder, itemDirectoryRelative(captureId));
+    for (const [name, src] of sources) {
+      if (keep.has(name)) continue;
+      const dest = path.join(itemDir, name);
+      assertLibraryDirectory(folder, itemDirectoryRelative(captureId));
+      assertLibraryDirectory(trashDir);
+      if (!regularLibraryFile(trashDir, path.relative(trashDir, src))) throw new Error('Restore media changed');
+      await move(src, dest);
+      moved.push({ src, dest });
+    }
+    assertLibraryDirectory(folder, itemDirectoryRelative(captureId));
+    assertLibraryDirectory(trashDir);
+    for (const [name, src] of sources) {
+      if (!regularLibraryFile(folder, itemFileRelative(captureId, name))) throw new Error('Restore media changed');
+      if (keep.has(name) && (!regularLibraryFile(trashDir, path.relative(trashDir, src)) || (await fileDigest(src)) !== (await fileDigest(path.join(itemDir, name))))) throw new Error('Restore media changed');
+    }
+    const normalized = record ? normalizeOwnedItemReferences(record, new Set(sources.keys())) : null;
+    opts.commitRestore(normalized);
+    committed = true;
+    if (record) await fs.promises.unlink(path.join(trashDir, `${captureId}.json`));
+    for (const name of keep) {
+      const source = sources.get(name);
+      if (source) await fs.promises.unlink(source);
+    }
+    if (nested) await fs.promises.rmdir(trashItem);
+  } catch (error) {
+    if (committed) {
+      console.warn('Restore trash cleanup failed', { captureId });
+      return;
+    }
+    const errors: unknown[] = [];
+    for (const move of moved.reverse()) {
+      try {
+        if (!(await publisher.publish(move.dest, move.src))) throw new Error('Restore rollback target already exists');
+        if (process.platform !== 'win32') await fs.promises.unlink(move.dest);
+      } catch (failure) {
+        errors.push(failure);
+      }
+    }
+    if (createdItem && !errors.length) {
+      try {
+        await fs.promises.rmdir(itemDir);
+      } catch (failure) {
+        errors.push(failure);
+      }
+    }
+    if (createdItemsParent && !errors.length) {
+      try {
+        assertLibraryDirectory(folder, 'items');
+        await fs.promises.rmdir(path.join(folder, 'items'));
+      } catch (failure) {
+        if ((failure as NodeJS.ErrnoException).code !== 'ENOTEMPTY') errors.push(failure);
+      }
+    }
+    if (errors.length) throw new AggregateError([error, ...errors], 'Restore rollback failed');
+    throw error;
+  } finally {
+    pendingTrash.delete(lock);
+    try {
+      await publisher.close();
+    } catch {
+      console.warn('Restore publisher close failed', { captureId });
+    }
   }
 }
 
@@ -197,5 +495,54 @@ export async function listTrashRecords(trashDir: string): Promise<PostRecordShap
     }
   }
   records.sort((a, b) => new Date(b.trashedAt || 0).getTime() - new Date(a.trashedAt || 0).getTime());
+  return records;
+}
+
+// ブリッジ用索引のための、意図して小さく・仕事量に上限のある読み出し。完全 ZIP は .trash の
+// JSON を検査せず置けるため、表示用一覧をここで使うと巨大な media/raw まで parse・正規化し、
+// 起動時や索引更新のたびに main process のメモリを使い切れる。ファイル単位と走査全体の両方を
+// 制限し、必要な欄だけを保持する。上限を超えたレコードは通知から欠けるだけで、ゴミ箱の中身や
+// 復元には触れない。
+export async function listTrashIndexRecords(trashDir: string): Promise<TrashIndexRecord[]> {
+  let names: string[];
+  try {
+    names = await fs.promises.readdir(trashDir);
+  } catch {
+    return [];
+  }
+  const records: TrashIndexRecord[] = [];
+  let bytesRead = 0;
+  let filesExamined = 0;
+  for (const f of names.sort()) {
+    if (!f.toLowerCase().endsWith('.json')) continue;
+    if (++filesExamined > TRASH_INDEX_MAX_FILES) break;
+    let handle: fs.promises.FileHandle | null = null;
+    try {
+      const file = path.join(trashDir, f);
+      handle = await fs.promises.open(file, 'r');
+      const { size } = await handle.stat();
+      if (size > TRASH_INDEX_RECORD_MAX_BYTES || bytesRead + size > TRASH_INDEX_TOTAL_MAX_BYTES) continue;
+      bytesRead += size;
+      // stat 後にファイルが伸びても readFile のように末尾まで追わず、確認したサイズだけ読む。
+      const contents = Buffer.alloc(size);
+      let offset = 0;
+      while (offset < size) {
+        const { bytesRead: chunkSize } = await handle.read(contents, offset, size - offset, offset);
+        if (!chunkSize) break;
+        offset += chunkSize;
+      }
+      const rec = parseJsonLoose(contents.subarray(0, offset).toString('utf8'));
+      if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
+      const captureId = f.replace(/\.json$/i, '');
+      if (rec.captureId !== captureId) continue;
+      if (rec.url != null && typeof rec.url !== 'string') continue;
+      if (rec.trashedAt != null && typeof rec.trashedAt !== 'string') continue;
+      records.push({ captureId, url: rec.url || null, trashedAt: rec.trashedAt || null });
+    } catch {
+      /* 壊れたものと、走査中に消えたものは索引に載せない */
+    } finally {
+      await handle?.close();
+    }
+  }
   return records;
 }

@@ -1,13 +1,16 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import JSZip from 'jszip';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { saveClassifiedTag, getClassifiedAssignments, setClassifiedAssignments } from '../../app/src/main/lib-tag-classification';
 import { deleteTags, mergeTags, renameTag } from '../../app/src/main/lib-db-tag-vocab';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
-import { writeCompleteZip, importCompleteZipToDb } from '../../app/src/main/lib-archive';
+import { writeCompleteZip } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { trashCapture } from '../../app/src/main/lib-trash-capture';
+import { MAX_CLASSIFIED_TAG_VOCABULARY, PortableClassifiedTagVocabulary } from '../../app/src/shared/tag-classification';
 
 let directory: string;
 let handle: ReturnType<typeof openDatabase>;
@@ -134,11 +137,39 @@ test('ZIPの往復で所属作品、作品なし、手動付与と未使用タ�
     const writer = createDbWriter(destination.sqlite);
     expect(writer.getPostFlags('p')?.tagClassification).toEqual(createDbWriter(handle.sqlite).getPostFlags('p')?.tagClassification);
     expect(writer.tagVocabOverview().some((row) => row.name === '未使用キャラ' && row.category === 'character')).toBe(true);
+    expect(destination.sqlite.prepare("SELECT name FROM tags WHERE category='general'").all()).toEqual([]);
     writer.setClassifiedAssignments([{ postId: 'p', tagIds: [] }]);
     expect(writer.getPostFlags('p')?.tags).toEqual([]);
   } finally {
     destination.sqlite.close();
   }
+});
+
+test('ZIPの分類タグ語彙は件数を制限し、自動付与を一括で再計算する', async () => {
+  const existingWork = tag('既存作品', 'work');
+  const existingCharacter = tag('既存キャラ', 'character', existingWork);
+  assign(existingCharacter);
+  handle.sqlite.exec(`
+    CREATE TABLE implied_delete_audit (value INTEGER);
+    CREATE TRIGGER audit_implied_delete AFTER DELETE ON post_tags WHEN OLD.implied = 1
+    BEGIN INSERT INTO implied_delete_audit VALUES (1); END;
+  `);
+
+  const zip = new JSZip();
+  zip.file(
+    'library/classified-tags.json',
+    JSON.stringify([
+      { name: '作品1', category: 'work', workName: null },
+      { name: '作品2', category: 'work', workName: null },
+      { name: '作品3', category: 'work', workName: null },
+    ]),
+  );
+  const zipPath = path.join(directory, 'vocabulary.zip');
+  fs.writeFileSync(zipPath, await zip.generateAsync({ type: 'nodebuffer' }));
+
+  await importCompleteZipToDb(handle.sqlite, zipPath, path.join(directory, 'imported'));
+  expect(handle.sqlite.prepare('SELECT COUNT(*) AS count FROM implied_delete_audit').get()).toEqual({ count: 1 });
+  expect(() => PortableClassifiedTagVocabulary.parse(Array.from({ length: MAX_CLASSIFIED_TAG_VOCABULARY + 1 }, (_, i) => ({ name: `作品${i}`, category: 'work', workName: null })))).toThrow();
 });
 
 test('ゴミ箱のレコードから作品・キャラの関係を復元できる', async () => {

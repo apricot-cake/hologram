@@ -138,18 +138,6 @@ export function logSaveEvent(entry: SaveLogEntry): void {
   }
 }
 
-// 拡張機能自身のオリジン。共有ウィンドウのイベントを自分たちのコード
-// に帰属させるためのもの（uncaught-report.ts）。chrome.runtime が消え
-// ているときは null＝リロードによって取り残された孤児の content
-// script（#594 の形）。
-export function extensionOrigin(): string | null {
-  try {
-    return chrome.runtime.getURL('');
-  } catch {
-    return null;
-  }
-}
-
 // ページ側のデッドラインが諦めた。これが書き留められる唯一の経路で、
 // 複製ではなく共有にし、ホバー保存と一括取り込みが同じ形で記録する。
 //

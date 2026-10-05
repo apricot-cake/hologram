@@ -1,6 +1,6 @@
 import { dirname, basename, resolve } from 'node:path';
 import { defineConfig } from 'wxt';
-import { API_HOST_PERMISSIONS } from './utils/extractor/index.ts';
+import { API_HOST_PERMISSIONS, RESIDENT_MATCHES } from './utils/extractor/index.ts';
 
 const explicitOutput = process.env.HOLOGRAM_EXTENSION_OUTPUT || process.env.HOLOGRAM_EXTENSION_TEST_OUTPUT;
 
@@ -62,6 +62,9 @@ export default defineConfig({
     // 出ていくものすべてにとって正しい答えだ。
     define: {
       __EXT_BUILD_ID__: JSON.stringify(process.env.HOLOGRAM_EXT_BUILD_ID || ''),
+      // 実ブラウザ E2E が closed shadow 内を拡張機能 world から検査するための
+      // 専用境界。release では定数 false になり、listener ごと除去される。
+      __EXT_TEST__: JSON.stringify(Boolean(process.env.HOLOGRAM_EXTENSION_TEST_OUTPUT)),
     },
   }),
   manifest: {
@@ -78,9 +81,9 @@ export default defineConfig({
     // contextMenus（#122）: 画像の右クリックにある保存項目。警告なし
     // （インストール時の permission プロンプトなし、host_permissions なし）で、
     // 対応サイト外の画像も利用者の明示操作で保存する。
-    permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage', 'contextMenus'],
-    // 投稿情報を取得する API 通信のホストだけを許可する。
-    host_permissions: API_HOST_PERMISSIONS,
+    permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage', 'contextMenus', 'alarms'],
+    // API 通信と、更新・起動後に常駐スクリプトを再注入するホストを許可する。
+    host_permissions: [...new Set([...API_HOST_PERMISSIONS, ...RESIDENT_MATCHES])],
     icons: {
       16: 'icons/icon16.png',
       32: 'icons/icon32.png',

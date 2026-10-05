@@ -282,6 +282,30 @@ export function anchorAtPoint(anchors: Iterable<Anchor>, x: number, y: number): 
   return hit;
 }
 
+// pointer-events:none の可視面を座標委譲するとき、その点を本当に拡張機能が
+// 所有してよいか。画像を包むリンクは保存面の土台だが、画像内外を問わず
+// 前面にある button/link/フォーム部品や、無関係な modal・cover はページの
+// 操作であり奪わない。サイト固有のメディア装飾も、操作要素でなければ従来
+// どおり画像の一部として扱える。
+export function controlPointIsOwned(anchor: Anchor, x: number, y: number, pointerOverlayInMedia?: (overlay: Element, mediaBox: Element) => boolean, textAnchor?: Element | null): boolean {
+  const top = document.elementFromPoint(x, y);
+  if (!top) return false;
+  // テキスト投稿の操作は投稿全体を hover 領域にする一方、面そのものは
+  // avatar に置く。所有判定まで投稿全体を使うと <a><avatar></a> のリンクを
+  // 「投稿の内側にある別の操作」と誤認するため、配置と同じランドマークを使う。
+  const hitBox = anchor.kind === 'text' && textAnchor ? textAnchor : anchor.hitBoxes.find((box) => rectHoldsPointer(box.getBoundingClientRect(), x, y)) || anchor.box;
+  // profile の <a><avatar></a> だけは操作面の土台として扱う。包含関係だけを
+  // 例外条件にすると、<button><avatar></button> や role=button、フォーム、
+  // 編集領域まで拡張機能が所有し、ページの trusted click を奪ってしまう。
+  if (top.closest('button, input, select, textarea, summary, [role="button"], [role="link"]:not(a[href]), [contenteditable="true"]')) return false;
+  const link = top.closest('a[href]');
+  // X の実DOMは avatar container > profile link > img。サイトによっては
+  // link > avatar container なので、期待するprofile linkとの包含は両向きを許す。
+  if (link && !(link.contains(hitBox) || (anchor.kind === 'text' && hitBox.contains(link)))) return false;
+  if (top === hitBox || hitBox.contains(top) || top.contains(hitBox)) return true;
+  return pointerOverlayInMedia?.(top, hitBox) === true;
+}
+
 // すべての解除経路が尋ねなければならない問い、そしてそれらがホバーを落
 // としてよい唯一の理由: ポインタはまだこの画像の上にあるか。操作を隠し
 // うるものはすべてここを通るので、「カーソルが画像の上にある間はボタン

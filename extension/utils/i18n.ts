@@ -129,6 +129,7 @@ export const MESSAGES = {
     cornerSave: '投稿を保存',
     cornerSaveImage: 'この画像を保存',
     cornerSaveAll: '投稿の画像をすべて保存',
+    cornerSaving: '保存中',
     // 「再試行」という言葉を言う。以前の文言は失敗理由だけだったの
     // で、押すと保存を回復させる唯一の操作が、押すとそうなるとは一度
     // も言っていなかった（#310）。なぜ失敗したかはバナーの役目で、そ
@@ -210,6 +211,7 @@ export const MESSAGES = {
     cornerSave: 'Save post',
     cornerSaveImage: 'Save this image',
     cornerSaveAll: 'Save all post images',
+    cornerSaving: 'Saving',
     cornerRetry: 'Save failed. Press to retry',
 
     // bulk-capture.ts: chase モードの取り込みバナー（#362、#280 で X 以外にも一般化）

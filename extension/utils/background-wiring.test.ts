@@ -4,6 +4,12 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { startBackground } from './background';
+import { VERIFICATION_TAB_CAPABILITY, VERIFICATION_TAB_CAPABILITY_KEY } from './verification-tabs.ts';
+
+vi.mock('./local-build-reload.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./local-build-reload.ts')>()),
+  EXT_BUILD_ID: 'background-wiring-build',
+}));
 
 function createPortController(setLastError: (message?: string) => void, onPost?: (message: any) => void) {
   const messageListeners: Array<(message: any) => void> = [];
@@ -37,7 +43,8 @@ function createPortController(setLastError: (message?: string) => void, onPost?:
   };
 }
 
-function setupBackground() {
+function setupBackground(failRegistration = false) {
+  const capabilityDuringRegistration: unknown[] = [];
   const messageListeners: Array<(message: any, sender: any, sendResponse: (response: any) => void) => boolean> = [];
   const commandListeners: Array<(command: string) => Promise<void> | void> = [];
   const contextMenuListeners: Array<(info: any, tab: any) => void> = [];
@@ -50,27 +57,35 @@ function setupBackground() {
   const ports: ReturnType<typeof createPortController>[] = [];
   const tabsSent: Array<{ tabId: number; message: any }> = [];
   const executed: any[] = [];
+  const actionCalls: Array<{ method: string; details: any }> = [];
   const localStore = new Map<string, any>();
   const sessionStore = new Map<string, any>();
   let activeTab: any = null;
   let selectedMediaContext: any = null;
   let fileScriptError: Error | null = null;
+  let runFileScript: ((details: any) => Promise<void> | void) | null = null;
+  let reloadCalls = 0;
   let tabMessage: (tabId: number, message: any) => Promise<any> = async () => undefined;
   const executeScript: (details: any) => Promise<any> = async (details) => {
     executed.push(details);
     if (details.files && fileScriptError) throw fileScriptError;
+    if (details.files) await runFileScript?.(details);
     return details.func ? [{ result: selectedMediaContext }] : [];
   };
   let connectNative: () => any = () => {
     throw new Error('Specified native messaging host not found.');
   };
+  let failNextStorageGet = false;
 
   const chromeStub: any = {
+    alarms: { create: async () => {}, onAlarm: { addListener: () => {} } },
     runtime: {
       id: 'test-extension-id',
       lastError: undefined,
       onMessage: {
         addListener(listener: any) {
+          capabilityDuringRegistration.push((globalThis as any)[VERIFICATION_TAB_CAPABILITY_KEY]);
+          if (failRegistration) throw new Error('registration failed');
           messageListeners.push(listener);
         },
         removeListener(listener: any) {
@@ -80,6 +95,7 @@ function setupBackground() {
       },
       connectNative: () => connectNative(),
       getURL: (file: string) => `chrome-extension://test-extension-id/${file}`,
+      reload: () => reloadCalls++,
     },
     i18n: { getMessage: (key: string) => `msg:${key}` },
     contextMenus: {
@@ -110,10 +126,10 @@ function setupBackground() {
     scripting: { executeScript: (details: any) => executeScript(details) },
     action: {
       onClicked: { addListener: (listener: any) => actionClickListeners.push(listener) },
-      setBadgeText: async () => {},
-      setBadgeBackgroundColor: async () => {},
-      setBadgeTextColor: async () => {},
-      setTitle: async () => {},
+      setBadgeText: async (details: any) => actionCalls.push({ method: 'setBadgeText', details }),
+      setBadgeBackgroundColor: async (details: any) => actionCalls.push({ method: 'setBadgeBackgroundColor', details }),
+      setBadgeTextColor: async (details: any) => actionCalls.push({ method: 'setBadgeTextColor', details }),
+      setTitle: async (details: any) => actionCalls.push({ method: 'setTitle', details }),
     },
     commands: { onCommand: { addListener: (listener: any) => commandListeners.push(listener) } },
     storage: {
@@ -123,8 +139,12 @@ function setupBackground() {
           if (keys == null) result = Object.fromEntries(localStore);
           else if (typeof keys === 'string') result = localStore.has(keys) ? { [keys]: localStore.get(keys) } : {};
           else result = Object.fromEntries((keys as string[]).filter((key) => localStore.has(key)).map((key) => [key, localStore.get(key)]));
-          if (callback) callback(result);
-          else return Promise.resolve(result);
+          if (callback) {
+            if (failNextStorageGet) chromeStub.runtime.lastError = { message: 'storage unavailable' };
+            callback(result);
+            chromeStub.runtime.lastError = undefined;
+            failNextStorageGet = false;
+          } else return Promise.resolve(result);
         },
         set(items: Record<string, unknown>, callback?: () => void) {
           for (const [key, value] of Object.entries(items)) localStore.set(key, value);
@@ -160,7 +180,9 @@ function setupBackground() {
   }
 
   return {
+    capabilityDuringRegistration,
     actionClickListeners,
+    actionCalls,
     commandListeners,
     contextMenuCreateCalls,
     contextMenuUpdateCalls,
@@ -168,6 +190,9 @@ function setupBackground() {
     executed,
     localStore,
     ports,
+    get reloadCalls() {
+      return reloadCalls;
+    },
     tabsSent,
     clickMedia(tab: any, srcUrl: string, menuItemId = 'hologram-save', mediaType: 'image' | 'video' = 'image') {
       for (const listener of contextMenuListeners) listener({ menuItemId, srcUrl, mediaType }, tab);
@@ -199,12 +224,18 @@ function setupBackground() {
     failFileScript(error: Error) {
       fileScriptError = error;
     },
+    setFileScript(handler: (details: any) => Promise<void> | void) {
+      runFileScript = handler;
+    },
+    failNextLocalGet() {
+      failNextStorageGet = true;
+    },
     connectAsUnavailable(message = 'Specified native messaging host not found.') {
       connectNative = () => {
         throw new Error(message);
       };
     },
-    connectAsControllablePort() {
+    connectAsControllablePort(response: Record<string, unknown> | null = { ok: true }, onLog?: (entry: any) => void) {
       connectNative = () => {
         let controller!: ReturnType<typeof createPortController>;
         controller = createPortController(
@@ -212,7 +243,11 @@ function setupBackground() {
             chromeStub.runtime.lastError = message ? { message } : undefined;
           },
           (message) => {
-            if (message?.type === 'log') queueMicrotask(() => controller.emitMessage({ ok: true }));
+            if (message?.type === 'query' && message.requestIds?.length) queueMicrotask(() => controller.emitMessage({ ok: true, id: message.id, protocolVersion: 6, saveFolder: 'C:/library', results: {}, requests: {} }));
+            if (message?.type === 'log') {
+              onLog?.(message.entry);
+              if (response) queueMicrotask(() => controller.emitMessage(response));
+            }
           },
         );
         ports.push(controller);
@@ -226,6 +261,19 @@ function setupBackground() {
 const POST_URL = 'https://x.com/not-a-known-post-shape';
 const X_SENDER = { tab: { id: 7, url: 'https://x.com/home' } };
 
+test('保存ルーティングの全 listener 登録が終わるまで検証能力の印を出さない', () => {
+  const env = setupBackground();
+  expect(env.capabilityDuringRegistration.length).toBeGreaterThan(0);
+  expect(env.capabilityDuringRegistration.every((value) => value === undefined)).toBe(true);
+  expect((globalThis as any)[VERIFICATION_TAB_CAPABILITY_KEY]).toBe(VERIFICATION_TAB_CAPABILITY);
+});
+
+test('listener 登録の失敗では以前の能力の印も残さない', () => {
+  (globalThis as any)[VERIFICATION_TAB_CAPABILITY_KEY] = VERIFICATION_TAB_CAPABILITY;
+  expect(() => setupBackground(true)).toThrow('registration failed');
+  expect((globalThis as any)[VERIFICATION_TAB_CAPABILITY_KEY]).toBeUndefined();
+});
+
 async function portThatSent(ports: ReturnType<typeof createPortController>[], type: string) {
   let found: ReturnType<typeof createPortController> | undefined;
   await vi.waitFor(() => {
@@ -235,11 +283,53 @@ async function portThatSent(ports: ReturnType<typeof createPortController>[], ty
   return found!;
 }
 
+async function loggedEntry(ports: ReturnType<typeof createPortController>[], predicate: (entry: any) => boolean) {
+  let found: any;
+  await vi.waitFor(
+    () => {
+      found = ports
+        .flatMap((port) => port.sent)
+        .filter((message) => message?.type === 'log')
+        .map((message) => message.entry)
+        .find(predicate);
+      expect(found).toBeTruthy();
+    },
+    { timeout: 2500 },
+  );
+  return found;
+}
+
 describe('残した起動経路', () => {
   let env: ReturnType<typeof setupBackground>;
 
   beforeEach(() => {
     env = setupBackground();
+  });
+
+  test('先行診断がtimeout中でも注入を待たせずactivateとbulkのFIFO順を保つ', async () => {
+    vi.useFakeTimers();
+    try {
+      const order: string[] = [];
+      env.connectAsControllablePort(null, (entry) => order.push(`${entry.stage}/${entry.phase}`));
+      env.dispatch({ type: 'logCapture', entry: { stage: 'unknown', phase: 'begin' } });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(order).toEqual(['unknown/begin']);
+
+      env.setFileScript(() => {
+        env.dispatch({ type: 'logCapture', entry: { stage: 'bulk', phase: 'begin', platform: 'x', site: 'x.com', category: 'bulk-capture', message: 'Bulk capture started' } }, { tab: { id: 42, url: 'https://x.com/i/bookmarks?token=token0#token0' }, frameId: 0 });
+      });
+      env.clickMenu({ id: 42, url: 'https://x.com/i/bookmarks?token=token0#token0' }, 'hologram-save');
+      await vi.advanceTimersByTimeAsync(0);
+
+      // 先行 batch は無応答のままだが、executeScript は timeout を待たない。
+      expect(env.executed).toEqual([{ target: { tabId: 42 }, files: ['bulk.js'] }]);
+      expect(order).toEqual(['unknown/begin']);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(order).toEqual(['unknown/begin', 'activate/begin', 'bulk/begin']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('ツールバーとキー操作を登録せず、保存済み一覧の右クリックから bulk.js を注入する', async () => {
@@ -267,6 +357,74 @@ describe('残した起動経路', () => {
     });
     env.clickMenu({ id: 42, url: 'https://x.com/i/history' }, 'hologram-save');
     await vi.waitFor(() => expect(env.executed).toEqual([{ target: { tabId: 42 }, files: ['bulk.js'] }]));
+  });
+
+  test('activate入口を注入先のbulk beginより先に記録し、build通知でも注入中はreloadしない', async () => {
+    const order: string[] = [];
+    env.connectAsControllablePort({ ok: true, extBuild: 'next-build' }, (entry) => order.push(`${entry.stage}/${entry.phase}`));
+    env.setFileScript(() => {
+      env.dispatch({ type: 'logCapture', entry: { stage: 'bulk', phase: 'begin', platform: 'x', site: 'x.com', category: 'bulk-capture', message: 'Bulk capture started' } }, { tab: { id: 42, url: 'https://x.com/i/bookmarks?token=token0#token0' }, frameId: 0 });
+      order.push('fixture-ran');
+    });
+
+    env.clickMenu({ id: 42, url: 'https://x.com/i/bookmarks?token=token0#token0' }, 'hologram-save');
+
+    await vi.waitFor(() => expect(order).toContain('fixture-ran'));
+    const bulkEntry = await loggedEntry(env.ports, (entry) => entry.stage === 'bulk' && entry.phase === 'begin');
+    expect(order.filter((event) => event.includes('/')).slice(0, 2)).toEqual(['activate/begin', 'bulk/begin']);
+    expect(JSON.stringify(bulkEntry)).not.toContain('token0');
+    expect(bulkEntry).not.toHaveProperty('url');
+    expect(env.reloadCalls).toBe(0);
+    expect(env.executed).toEqual([{ target: { tabId: 42 }, files: ['bulk.js'] }]);
+  });
+
+  test('bulk beginのlocal診断にも送信元URLの秘密を残さない', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    env.connectAsUnavailable();
+
+    env.dispatch({ type: 'logCapture', entry: { stage: 'bulk', phase: 'begin', platform: 'x', site: 'x.com', category: 'bulk-capture', message: 'Bulk capture started' } }, { tab: { id: 42, url: 'https://alice:token0@x.com/i/bookmarks?token=token0#token0' }, frameId: 0 });
+
+    await vi.waitFor(() => expect([...env.localStore.keys()].some((key) => key.startsWith('diaglog_'))).toBe(true));
+    const localEntry = env.localStore.get([...env.localStore.keys()].find((key) => key.startsWith('diaglog_'))!);
+    expect(localEntry).toMatchObject({ stage: 'bulk', phase: 'begin', platform: 'x', site: 'x.com', category: 'bulk-capture', message: 'Bulk capture started' });
+    expect(JSON.stringify(localEntry)).not.toContain('token0');
+    expect(localEntry).not.toHaveProperty('url');
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  test('注入失敗の診断はURL由来の秘密をnativeとlocalのどちらにも残さない', async () => {
+    const secret = 'token0';
+    const pageUrl = `https://alice:${secret}@x.com/i/bookmarks?access_token=${secret}#${secret}`;
+    const quotedFailure = new Error(`Cannot access contents of url "${pageUrl}". Extension manifest must request permission.`);
+    const ports = env.connectAsControllablePort({ ok: true, extBuild: 'next-build' });
+    env.failFileScript(quotedFailure);
+
+    env.clickMenu({ id: 42, url: pageUrl }, 'hologram-save');
+
+    const nativeEntry = await loggedEntry(ports, (entry) => entry.stage === 'activate' && entry.phase === 'fail');
+    await vi.waitFor(() => expect([...env.localStore.keys()].some((key) => key.startsWith('diaglog_'))).toBe(true));
+    const localEntry = env.localStore.get([...env.localStore.keys()].find((key) => key.startsWith('diaglog_'))!);
+    const expected = {
+      stage: 'activate',
+      phase: 'fail',
+      site: 'x.com',
+      category: 'bulk-injection',
+      message: 'Content script injection failed',
+    };
+
+    expect(nativeEntry).toMatchObject(expected);
+    expect(localEntry).toMatchObject(expected);
+    expect(JSON.stringify(nativeEntry)).not.toContain(secret);
+    expect(JSON.stringify(localEntry)).not.toContain(secret);
+    expect(nativeEntry).not.toHaveProperty('url');
+    expect(nativeEntry).not.toHaveProperty('error');
+    expect(localEntry).not.toHaveProperty('url');
+    expect(localEntry).not.toHaveProperty('error');
+    await vi.waitFor(() => expect(env.actionCalls).toContainEqual({ method: 'setBadgeText', details: { text: '!', tabId: 42 } }));
+    // build 通知を受けても注入中には reload せず、失敗処理が capture gate を
+    // 解放した後の静穏期間にだけ追従する。
+    await vi.waitFor(() => expect(env.reloadCalls).toBe(1), { timeout: 5000 });
   });
 });
 
@@ -383,10 +541,23 @@ describe('右クリックメディア保存', () => {
     await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
     env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: 'Article', author: null, published: null, siteName: 'Example', image: 'https://cdn.example.com/og.jpg', url: TAB.url, metaSource: {} } }, { tab: TAB });
     const port = await portThatSent(ports, 'saveMedia');
-    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
+    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', expectedSaveFolder: 'C:/library', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
+    expect([...env.localStore.values()].find((entry) => entry?.payload?.type === 'saveMedia')).toMatchObject({ payload: { expectedSaveFolder: 'C:/library' }, outcomeUnknown: true, attemptedAt: expect.any(Number) });
     port.emitMessage({ ok: true, captureId: 'right-click-id', media: [SRC] });
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'savedUpdate')).toBe(true));
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.metaOk === true)).toBe(true));
+  });
+
+  test('native成功後のqueue cleanup失敗は成功通知を失敗へ変えない', async () => {
+    const ports = env.connectAsControllablePort();
+    env.setTabMessage(async () => ({ context: null }));
+    env.clickMedia(TAB, SRC);
+    await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: null, author: null, published: null, siteName: null, image: null, url: TAB.url, metaSource: {} } }, { tab: TAB });
+    const port = await portThatSent(ports, 'saveMedia');
+    env.failNextLocalGet();
+    port.emitMessage({ ok: true, captureId: 'saved-after-cleanup-error', media: [SRC] });
+    await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.ok === true)).toBe(true));
   });
 
   test('右クリックの一部保存は通知し、同じタブの発行済みトークンだけ再試行できる', async () => {

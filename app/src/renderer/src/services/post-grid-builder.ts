@@ -25,6 +25,8 @@ import { densityImage, postIdKey, makeGroupRecords, makeCardModel, percentileFn,
 import type { DisplayShape } from './display.ts';
 import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
+import { deletePosts } from './post-deletion.ts';
+import { applyPostsDeltaToCache } from './post-delta-cache.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
 import { hologramIpc } from './ipc.ts';
 import { sync as syncPostsData, getQuotedPost } from './posts-data.ts';
@@ -135,13 +137,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     _loadPostsInFlight = true;
     try {
       const res = await listPostsDelta(_haveBaseline);
-      if (!res || res.full) {
-        _postsById = new Map();
-        for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
-      } else {
-        for (const id of res.removed || []) _postsById.delete(id);
-        for (const p of res.added || []) _postsById.set(p.captureId, stampPost(p));
-      }
+      // DB を閉じてライブラリを移動している間は「空」ではない。現在の一覧と baseline を
+      // 保持し、移動完了時の posts-changed による再取得を待つ。
+      if (res?.paused) return;
+      _postsById = applyPostsDeltaToCache(_postsById, res, stampPost);
       _haveBaseline = true;
       // フォルダのドロップ取り込みでは、投稿と手動グループが同じ操作で増える。
       // 投稿だけを再読込すると古い manualGroups でカードを組み立ててしまうため、
@@ -537,21 +536,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // 代わりに inspector-builder.ts が posts-data.ts の消失を監視する＝それら
   // すべてに対する1つの答えで、下の markPostsMutated() を通して届く。
   async function executeDeleteGroup(g: HologramPostGroup) {
-    // グループのカードは1つの操作単位なので、個々のファイル削除を順番に待って
-    // から消すのではなく、直ちに一覧から外す。実ファイルの削除は互いに独立している。
-    removePosts(g.records.map((r) => r.captureId));
-    trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）
-    notify(deps.t('deleted'));
-    await Promise.all(
-      g.records.map(async (r) => {
-        try {
-          await deletePost(r.image || r.video || r.captureId);
-        } catch {
-          /* 他の項目の削除は続ける */
-        }
-      }),
-    );
-    await loadPosts(true); // 失敗した項目があれば、実際の保存状態へ戻す
+    await deletePosts(g.records, { deletePost, removePosts, refreshTrash: trashRefresh, loadPosts, notify, t: deps.t });
   }
 
   return {

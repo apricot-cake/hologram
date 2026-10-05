@@ -1,4 +1,5 @@
 import { Image as ImageIcon, Search, Trash2, Users, X } from 'lucide-react';
+import { isComposing } from '../_shared/composition.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent as ReactKeyboardEvent, UIEvent as ReactUIEvent } from 'react';
 import { ScrollArea as ScrollAreaPrimitive } from '@base-ui/react/scroll-area';
@@ -155,6 +156,7 @@ export function HistoryPanelBody() {
   }
 
   function onSearchKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (isComposing(e.nativeEvent)) return;
     if (e.key === 'ArrowDown' && rows.length) {
       e.preventDefault();
       focusRow(0);

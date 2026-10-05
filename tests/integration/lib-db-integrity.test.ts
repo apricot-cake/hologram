@@ -64,6 +64,15 @@ describe('findOrphanMedia / findMissingMedia', () => {
     expect(orphans).toEqual([{ captureId: '1700000000000-aa01', file: '1700000000000-aa01.jpg' }]);
   });
 
+  test('bridgeが衝突回避suffixを付けたcaptureIdも同じidentityとして検出する', () => {
+    fs.writeFileSync(path.join(saveFolder, '1755907200000-a1b2c3d4-1.jpg'), 'x');
+
+    const orphans = findOrphanMedia(saveFolder, handle.sqlite);
+
+    expect(orphans).toContainEqual({ captureId: '1755907200000-a1b2c3d4-1', file: '1755907200000-a1b2c3d4-1.jpg' });
+    expect(capturedAtFromId('1755907200000-a1b2c3d4-1')).toBe(new Date(1755907200000).toISOString());
+  });
+
   test('posts行があるファイルはorphanに含まれない', () => {
     writeDirectPost(handle.sqlite, saveFolder, '1700000000001-aa02', '1700000000001-aa02.jpg');
 
@@ -256,6 +265,10 @@ describe('capturedAtFromId', () => {
   test('captureIdの先頭epochMillisをcapturedAtとして復元する', () => {
     expect(capturedAtFromId('1700000000000-aa01')).toBe(new Date(1700000000000).toISOString());
   });
+
+  test('Dateの範囲外のepochMillisは現在時刻に退避する', () => {
+    expect(Number.isFinite(Date.parse(capturedAtFromId('99999999999999999999-aa01')))).toBe(true);
+  });
 });
 
 describe('recoverOrphanRecords', () => {
@@ -298,6 +311,17 @@ describe('recoverOrphanRecords', () => {
 
     expect(recovered.find((entry) => entry.captureId === captureId)?.files).toHaveLength(2);
     expect(handle.sqlite.prepare('SELECT file FROM media WHERE postId = ? ORDER BY seq').all(captureId)).toEqual([{ file: `items/${captureId}/${captureId}-media-0.jpg` }, { file: `items/${captureId}/${captureId}-media-1.png` }]);
+  });
+
+  test('範囲外の時刻を含む孤児が他の孤児の回復をロールバックしない', () => {
+    fs.writeFileSync(path.join(saveFolder, '1700000000503-ee04.jpg'), 'valid');
+    fs.writeFileSync(path.join(saveFolder, '99999999999999999999-ee05.jpg'), 'out-of-range');
+
+    const recovered = recoverOrphanRecords(saveFolder, handle.sqlite);
+
+    expect(recovered.map((entry) => entry.captureId)).toEqual(expect.arrayContaining(['1700000000503-ee04', '99999999999999999999-ee05']));
+    expect(one('SELECT 1 FROM posts WHERE captureId = ?', '1700000000503-ee04')).toBeTruthy();
+    expect(one('SELECT 1 FROM posts WHERE captureId = ?', '99999999999999999999-ee05')).toBeTruthy();
   });
 
   test('再実行は冪等（既にposts行がある孤児は既にorphanでないので再合成されない）', () => {

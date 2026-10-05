@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { buildEnvelope, inboxFailedDir, inboxNewDir, inboxSegmentsDir, writeInboxEvent } from '../../native-host/inbox.mts';
 import { normalizePostRecord } from '../../native-host/post-record.mts';
 import { openDatabase } from '../../app/src/main/lib-db';
@@ -61,6 +61,28 @@ test('一般ページの再試行は同じ媒体だけを更新し、別の媒�
     await writeInboxEvent(folder, buildEnvelope(wrong));
     expect(drainInbox(folder, db.sqlite).skipped).toContainEqual(expect.objectContaining({ reason: 'retry-target-mismatch' }));
     expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: 1 });
+  } finally {
+    db.sqlite.close();
+  }
+});
+
+test('DB 復元ではハッシュ順で先に現れた再試行を元投稿のセグメント後に適用する', () => {
+  const folder = mkTempDir('hologram-retry-segment-replay-');
+  const db = openDatabase(path.join(folder, 'library.db'));
+  try {
+    const original = normalizePostRecord({ captureId: '1700000000950-ad01', url: 'https://x.com/a/status/654321', saveIncomplete: true });
+    const retry = normalizePostRecord({ captureId: '1700000000951-ad02', retryOf: original.captureId, url: original.url, title: '再試行で取得した題名', saveIncomplete: false });
+    fs.mkdirSync(inboxSegmentsDir(folder), { recursive: true });
+    fs.writeFileSync(path.join(inboxSegmentsDir(folder), '0-retry.jsonl'), `${JSON.stringify(buildEnvelope(retry))}\n`);
+    fs.writeFileSync(path.join(inboxSegmentsDir(folder), 'f-original.jsonl'), `${JSON.stringify(buildEnvelope(original))}\n`);
+
+    const report = drainInbox(folder, db.sqlite);
+
+    expect(report.skipped).toEqual([]);
+    expect(report.applied).toEqual([original.captureId, retry.captureId]);
+    expect(db.sqlite.prepare('SELECT captureId,title,saveIncomplete FROM posts').all()).toEqual([{ captureId: original.captureId, title: '再試行で取得した題名', saveIncomplete: 0 }]);
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM inbox_segments').get()).toEqual({ n: 2 });
+    expect(drainInbox(folder, db.sqlite).segmentsReplayed).toEqual([]);
   } finally {
     db.sqlite.close();
   }
@@ -127,24 +149,44 @@ describe('drainInbox', () => {
       expect(count('posts')).toBe(before);
     });
 
-    // すでに取り込んだ loose ファイルは、受領記録だけで何もしないことになる＝中身は読まない。
-    // もし読んでいれば、壊れた JSON が invalid-json として skipped に出る。出ないことが
-    //「一度も開いていない」証拠になる。mtime を受領記録より前へ戻すと、「取り込んでから
-    // 書き直していない」状態を再現できる（書き直されていれば、下の hash-conflict のほうが
-    // 読みに行く）。
+    // すでに取り込んだまま触っていない loose ファイルは、受領記録だけで何もしないことに
+    // なる＝二回目の drain では一度も開かない。readFileSync の監視対象をこの実ファイルだけに
+    // 絞り、DB や別ファイルの読み取りを数えない。
     test('取込済みの loose はファイルを開かずに no-op になる', () => {
       const captureId = '1700000000000-aa01';
       const file = path.join(inboxNewDir(saveFolder), `${captureId}.json`);
-      const importedAt = Date.parse(one('SELECT importedAt FROM inbox_events WHERE eventId = ?', captureId).importedAt);
-      const original = fs.readFileSync(file);
-      fs.writeFileSync(file, 'this is not json');
-      const old = new Date(importedAt - 60_000);
-      fs.utimesSync(file, old, old);
+      const originalRead = fs.readFileSync;
+      let reads = 0;
+      const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation(((target: fs.PathOrFileDescriptor, ...args: any[]) => {
+        if (target === file) reads++;
+        return (originalRead as any)(target, ...args);
+      }) as typeof fs.readFileSync);
 
       const report = drainInbox(saveFolder, handle.sqlite);
 
       expect(report).toMatchObject({ applied: [], receiptOnly: [], noop: 1, skipped: [] });
-      fs.writeFileSync(file, original);
+      expect(reads).toBe(0);
+      readSpy.mockRestore();
+    });
+
+    test('utimes/chmod 後は一度だけ内容を確認し、その次は metadata baseline で開かない', () => {
+      const captureId = '1700000000000-aa01';
+      const file = path.join(inboxNewDir(saveFolder), `${captureId}.json`);
+      const originalRead = fs.readFileSync;
+      let reads = 0;
+      const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation(((target: fs.PathOrFileDescriptor, ...args: any[]) => {
+        if (target === file) reads++;
+        return (originalRead as any)(target, ...args);
+      }) as typeof fs.readFileSync);
+      const old = new Date(1_700_000_000_000);
+      fs.utimesSync(file, old, old);
+      fs.chmodSync(file, 0o640);
+
+      expect(drainInbox(saveFolder, handle.sqlite)).toMatchObject({ noop: 1, skipped: [] });
+      expect(reads).toBe(1);
+      expect(drainInbox(saveFolder, handle.sqlite)).toMatchObject({ noop: 1, skipped: [] });
+      expect(reads).toBe(1);
+      readSpy.mockRestore();
     });
   });
 
@@ -154,12 +196,35 @@ describe('drainInbox', () => {
       const rec = normalizePostRecord({ captureId, url: 'https://x.com/u/status/1', image: '1700000000000-aa01.jpg', text: 'DIFFERENT' });
       const envelope = buildEnvelope(rec);
       // eventId は同じでペイロード (text) が違うエンベロープを直に書く（同じファイルを上書きする）。
-      fs.writeFileSync(path.join(inboxNewDir(saveFolder), `${captureId}.json`), JSON.stringify(envelope));
+      const file = path.join(inboxNewDir(saveFolder), `${captureId}.json`);
+      fs.writeFileSync(file, JSON.stringify(envelope));
+      const backdated = new Date(1_600_000_000_000);
+      fs.utimesSync(file, backdated, backdated);
 
       const report = drainInbox(saveFolder, handle.sqlite);
 
       expect(report.skipped).toEqual([expect.objectContaining({ reason: 'hash-conflict' })]);
       expect(one('SELECT text FROM posts WHERE captureId = ?', captureId).text).toBe('hello'); // 変わっていない
+    });
+
+    test('内容検証中に再変更されたファイルは受理せず、次回に最新版を conflict として読む', async () => {
+      const captureId = '1700000000000-aa01';
+      const file = path.join(inboxNewDir(saveFolder), `${captureId}.json`);
+      const first = buildEnvelope(normalizePostRecord({ captureId, url: 'https://x.com/u/status/1', image: '1700000000000-aa01.jpg', text: 'FIRST' }));
+      const latest = buildEnvelope(normalizePostRecord({ captureId, url: 'https://x.com/u/status/1', image: '1700000000000-aa01.jpg', text: 'LATEST' }));
+      fs.writeFileSync(file, JSON.stringify(first));
+      const originalRead = fs.readFileSync;
+      const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementationOnce(((target: fs.PathOrFileDescriptor, ...args: any[]) => {
+        const result = (originalRead as any)(target, ...args);
+        fs.writeFileSync(file, JSON.stringify(latest));
+        return result;
+      }) as typeof fs.readFileSync);
+
+      const changing = drainInbox(saveFolder, handle.sqlite);
+      expect(changing.skipped).toEqual([expect.objectContaining({ reason: 'changed-during-read' })]);
+      readSpy.mockRestore();
+      expect(drainInbox(saveFolder, handle.sqlite).skipped).toEqual([expect.objectContaining({ reason: 'hash-conflict' })]);
+      expect(one('SELECT text FROM posts WHERE captureId = ?', captureId).text).toBe('hello');
     });
   });
 
