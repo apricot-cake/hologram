@@ -94,6 +94,7 @@ export async function applyArchiveImport(sqlite: Database.Database, stage: strin
         return row ? JSON.parse(row.json) : fallback();
       };
       const exists = sqlite.prepare('SELECT 1 FROM posts WHERE captureId=?');
+      const existingProfiles = target.getPosterProfiles();
       prepared.exec('UPDATE archive_records SET applied=0');
       const markApplied = prepared.prepare('UPDATE archive_records SET applied=1 WHERE captureId=?');
       importClassifiedTagVocabulary(sqlite, prepared.prepare("SELECT t.name,t.category,w.name AS workName FROM tags t LEFT JOIN tags w ON w.id=t.workId WHERE t.category!='general'").all() as Array<{ name: string; category: 'character' | 'work'; workName: string | null }>);
@@ -119,7 +120,10 @@ export async function applyArchiveImport(sqlite: Database.Database, stage: strin
       target.setManualGroups(mergeManualGroups(target.getManualGroups(), incoming('manual-groups', source.getManualGroups)).groups);
       target.setPosterFolders(mergePosterFolders(target.getPosterFolders(), incoming('poster-folders', source.getPosterFolders)));
       target.setPosterTags(mergePosterTags(target.getPosterTagNames(), incoming('poster-tags', source.getPosterTagNames)));
-      target.setPosterProfiles(mergePosterProfiles(target.getPosterProfiles(), incoming('poster-profiles', source.getPosterProfiles)));
+      // 投稿から今回生成された空の作者情報は、書庫の正規プロフィールを遮らない。
+      // 取り込み前からあるローカルプロフィールは従来どおり優先する。
+      const archivedProfiles = mergePosterProfiles(incoming('poster-profiles', source.getPosterProfiles), target.getPosterProfiles());
+      target.setPosterProfiles(mergePosterProfiles(existingProfiles, archivedProfiles));
       const groups = mergeTagGroups(target.getTagGroupNames(), incoming('tag-groups', source.getTagGroupNames));
       target.fillTagGroupsByName(groups.memberships, groups.labels ?? null);
       // 新たなフォルダーは統合後に参照する。再採番される手動グループ ID は再適用しない。

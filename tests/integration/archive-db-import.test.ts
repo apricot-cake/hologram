@@ -53,6 +53,35 @@ async function buildZip(entries: Record<string, string>) {
 }
 
 describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
+  test('実 export の正規プロフィールを再取り込みし、投稿由来 stub より優先する', async () => {
+    const raw = { captureId: 'roundtrip-author', platform: 'x', userId: 'author-roundtrip', screenName: 'roundtrip', text: '投稿', bio: '作者の自己紹介', profileLinks: [{ name: 'Website', value: 'https://example.test/author' }], banner: 'https://example.test/banner.png', bannerFile: 'banner.png' };
+    writePost(preparePostStmts(handle.sqlite), makeTagResolver(handle.sqlite), raw);
+    fs.writeFileSync(path.join(destFolder, 'banner.png'), 'banner bytes');
+    const expected = handle.sqlite.prepare('SELECT bio,links,banner,bannerFile FROM poster_profiles WHERE userId=?').get(raw.userId);
+    const zipPath = path.join(mkTempDir('hologram-profile-roundtrip-'), 'export.zip');
+    await writeCompleteZip(handle.sqlite, destFolder, null, zipPath);
+    const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
+    const canonical = JSON.parse(await zip.file('library/poster-profiles.json')!.async('string'));
+    expect(canonical.profiles[0]).toMatchObject(expected);
+    const post = JSON.parse(await zip.file('library/' + raw.captureId + '.json')!.async('string'));
+    expect(post.bio).toBeUndefined(); // 投稿用 PostView と正規プロフィールは別の表現。
+    const restored = openDatabase(path.join(mkTempDir('hologram-profile-restored-'), 'test.db'));
+    try {
+      expect((await importCompleteZipToDb(restored.sqlite, zipPath, mkTempDir('hologram-profile-restored-media-'))).ok).toBe(true);
+      expect(restored.sqlite.prepare('SELECT bio,links,banner,bannerFile FROM poster_profiles WHERE userId=?').get(raw.userId)).toEqual(expected);
+    } finally {
+      restored.sqlite.close();
+    }
+    const local = openDatabase(path.join(mkTempDir('hologram-profile-local-'), 'test.db'));
+    try {
+      writePost(preparePostStmts(local.sqlite), makeTagResolver(local.sqlite), { ...raw, captureId: 'local-profile', bio: 'ローカルの現在値', profileLinks: [], banner: 'https://example.test/local.png', bannerFile: 'local.png' });
+      const before = local.sqlite.prepare('SELECT bio,links,banner,bannerFile FROM poster_profiles WHERE userId=?').get(raw.userId);
+      expect((await importCompleteZipToDb(local.sqlite, zipPath, mkTempDir('hologram-profile-local-media-'))).ok).toBe(true);
+      expect(local.sqlite.prepare('SELECT bio,links,banner,bannerFile FROM poster_profiles WHERE userId=?').get(raw.userId)).toEqual(before);
+    } finally {
+      local.sqlite.close();
+    }
+  });
   test('投稿サイドカーだけにある作者情報と既存の所属を私有 DB 経由でも保持する', async () => {
     const writer = createDbWriter(handle.sqlite);
     writePost(preparePostStmts(handle.sqlite), makeTagResolver(handle.sqlite), { captureId: 'existing', text: '既存投稿' });

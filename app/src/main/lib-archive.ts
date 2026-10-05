@@ -947,7 +947,8 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   if (orgEntries['poster-profiles.json']) {
     const inc = PosterProfilesSchema.parse(await parseOrgEntry(orgEntries['poster-profiles.json']));
     rememberOrg('poster-profiles', inc);
-    dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
+    // 私有の空 DB に投稿から生成した stub より、正規の書庫プロフィールを優先する。
+    dbWriter.setPosterProfiles(mergePosterProfiles(inc, dbWriter.getPosterProfiles()));
   }
   if (orgEntries['tag-groups.json']) {
     const inc = TagGroupNamesSchema.parse(await parseOrgEntry(orgEntries['tag-groups.json']));
