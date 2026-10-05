@@ -1,13 +1,23 @@
 'use strict';
 const fs = require('node:fs');
 const { developmentOptions, startDevelopmentBrowser, waitForInterrupt } = require('./lib-dev-browser.cts');
-const { runningChromePid } = require('./lib-chrome-command-line.cts');
+const { developmentChromeStatus } = require('./lib-chrome-command-line.cts');
 
 async function main(dependencies: any = {}): Promise<void> {
   const options = (dependencies.options || developmentOptions)();
   if (process.argv.includes('--print')) {
-    const pid = (dependencies.runningPid || runningChromePid)(options.profile);
-    console.log(`chrome: ${options.executablePath}\nプロファイル: ${options.profile}\nChrome プロファイル: Default\n起動中: ${pid === null ? 'いいえ' : `はい（pid ${pid}）`}\nCDP: 管理された pipe（TCP 公開なし）\n共有リリースビルド: ${options.output}`);
+    const status = (dependencies.status || developmentChromeStatus)(options.profile);
+    const cdp =
+      status.transport === 'stopped'
+        ? '停止中（次回起動の設定: 管理された pipe、TCP 公開なし）'
+        : status.transport === 'tcp'
+          ? `警告: TCP 公開用の起動引数を検出（port=${status.port ?? '未指定'}, address=${status.address ?? '未指定'}）。待受状態は未確認`
+          : status.transport === 'pipe'
+            ? 'pipe 起動（TCP 公開指定なし。所有者への接続は未確認）'
+            : '外部起動・未管理（CDP の起動引数なし）';
+    console.log(
+      `chrome: ${options.executablePath}\nプロファイル: ${options.profile}\nChrome プロファイル: ${status.pid === null ? '次回起動の設定: Default' : status.profileDirectory}\n起動中: ${status.pid === null ? 'いいえ' : `はい（pid ${status.pid}）`}\nCDP（実際の起動引数による判定）: ${cdp}\n共有リリースビルド: ${options.output}`,
+    );
     return;
   }
   const session = await (dependencies.start || startDevelopmentBrowser)(options);
