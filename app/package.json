@@ -61,7 +61,7 @@
     "image-size": "^2.0.4",
     "intl-messageformat": "^11.2.15",
     "kysely": "^0.29.6",
-    "lucide-react": "^1.49.0",
+    "lucide-react": "^1.50.0",
     "masonic": "^4.1.0",
     "meilisearch": "^0.62.0",
     "react-image-crop": "^11.1.2",
