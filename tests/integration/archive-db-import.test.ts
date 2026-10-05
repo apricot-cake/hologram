@@ -9,12 +9,13 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
-import { importCompleteZipToDb, writeCompleteZip, ZipLimitError } from '../../app/src/main/lib-archive';
+import { writeCompleteZip, ZipLimitError } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
 import { applyPendingReplacements } from '../../app/src/main/lib-db-replaces';
 import { PostRecordInputSchema } from '../../native-host/post-schemas.mts';
-import { PostFlagsSchema } from '../../app/src/shared/data-schemas';
+import { PostFlagsSchema, PosterProfileSchema } from '../../app/src/shared/data-schemas';
 import { evalNode, makePostPredOf } from '../../app/src/renderer/src/services/query';
 
 const dirs: string[] = [];
@@ -161,6 +162,64 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
 });
 
 describe('importCompleteZipToDb: 非空DBへはマージ（置換ではない）', () => {
+  test.each([false, true])('ZIP に既存投稿の実体がない整理情報を保持する（新規投稿との混在:%s）', async (mixed) => {
+    const writer = createDbWriter(handle.sqlite);
+    const stmts = preparePostStmts(handle.sqlite),
+      tags = makeTagResolver(handle.sqlite);
+    for (const captureId of ['a', 'b']) writePost(stmts, tags, PostRecordInputSchema.parse({ captureId, text: captureId, tags: ['LocalTag'] }));
+    writer.setFolders({ folders: [{ id: 'f', name: 'Local', items: ['a'] }] });
+    writer.setUngrouped(['a']);
+    writer.setManualGroups([['a', 'b']]);
+    writer.setPosterFolders({ folders: [{ id: 'pf', name: 'Local', items: ['poster-one'] }] });
+    writer.setPosterTags({ tags: { 'poster-one': ['LocalTag'] } });
+    const profile = PosterProfileSchema.parse({ posterKey: 'poster-one', contentHash: 'local', provenance: 'fixture', firstObservedAt: '2026-01-01', lastObservedAt: '2026-01-01', displayName: 'Local' });
+    writer.setPosterProfiles({ profiles: [profile] });
+    writer.fillTagGroupsByName({ LocalTag: 'local-group' }, { 'local-group': 'Local' });
+    const ids = mixed ? ['b', 'new'] : ['b'];
+    const entries: Record<string, string> = {
+      'library/folders.json': JSON.stringify({
+        folders: [
+          { id: 'f', name: 'Incoming', items: ids },
+          { id: 'child', name: 'Child', parentId: 'f', items: ids },
+        ],
+      }),
+      'library/ungrouped.json': JSON.stringify({ keys: ids }),
+      'library/manual-groups.json': JSON.stringify({ groups: [mixed ? ['b', 'new'] : ['a', 'b']] }),
+      'library/poster-folders.json': JSON.stringify({ folders: [{ id: 'pf', name: 'Incoming', items: ['poster-two'] }] }),
+      'library/poster-tags.json': JSON.stringify({ tags: { 'poster-one': ['IncomingTag'] } }),
+      'library/poster-profiles.json': JSON.stringify({
+        profiles: [
+          { ...profile, contentHash: 'incoming', displayName: 'Incoming' },
+          { ...profile, posterKey: 'poster-two', contentHash: 'second' },
+        ],
+      }),
+      'library/tag-groups.json': JSON.stringify({ memberships: { LocalTag: 'incoming-group', IncomingTag: 'new-group' }, labels: { 'incoming-group': 'Incoming', 'new-group': 'New' } }),
+    };
+    if (mixed) entries['library/new.json'] = JSON.stringify({ captureId: 'new', text: 'New' });
+    await importCompleteZipToDb(handle.sqlite, await buildZip(entries), destFolder);
+    expect(writer.getFolders().folders.find((f) => f.id === 'f')).toMatchObject({ name: 'Local', items: mixed ? ['a', 'b', 'new'] : ['a', 'b'] });
+    expect(writer.getFolders().folders.find((f) => f.id === 'child')).toMatchObject({ parentId: 'f', items: ids });
+    expect(writer.getUngrouped().keys).toEqual(mixed ? ['a', 'b', 'new'] : ['a', 'b']);
+    expect(writer.getManualGroups().groups).toEqual([mixed ? ['a', 'b', 'new'] : ['a', 'b']]);
+    expect(writer.getPosterFolders().folders[0]).toMatchObject({ name: 'Local', items: ['poster-one', 'poster-two'] });
+    expect(writer.getPosterTagNames().tags['poster-one']).toEqual(['LocalTag', 'IncomingTag']);
+    expect(writer.getPosterProfiles().profiles.find((p) => p.posterKey === 'poster-one')).toMatchObject({ contentHash: 'local', displayName: 'Local' });
+    expect(writer.getPosterProfiles().profiles.find((p) => p.posterKey === 'poster-two')).toBeTruthy();
+    expect(writer.getTagGroupNames().memberships).toMatchObject({ LocalTag: 'local-group', IncomingTag: 'new-group' });
+  });
+
+  test('最後の整理情報が不正なら、既存投稿への所属を含め共有DB全体を保持する', async () => {
+    const writer = createDbWriter(handle.sqlite);
+    const stmts = preparePostStmts(handle.sqlite),
+      tags = makeTagResolver(handle.sqlite);
+    writePost(stmts, tags, PostRecordInputSchema.parse({ captureId: 'existing', text: 'Keep' }));
+    writer.setFolders({ folders: [{ id: 'keep', name: 'Keep', items: ['existing'] }] });
+    const before = writer.getFolders();
+    const zipPath = await buildZip({ 'library/new.json': JSON.stringify({ captureId: 'new', text: 'New' }), 'library/folders.json': JSON.stringify({ folders: [{ id: 'new-folder', name: 'New', items: ['existing', 'new'] }] }), 'library/tag-groups.json': JSON.stringify({ memberships: 42 }) });
+    await expect(importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).rejects.toThrow();
+    expect(writer.getFolders()).toEqual(before);
+    expect(handle.sqlite.prepare('SELECT captureId FROM posts ORDER BY captureId').all()).toEqual([{ captureId: 'existing' }]);
+  });
   test.each(['collections', 'folders'])('%s だけの旧書庫でも q と否定されたフォルダ条件を両方保つ', async (key) => {
     const zipPath = await buildZip({
       [`library/${key}.json`]: JSON.stringify({

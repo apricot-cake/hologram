@@ -31,7 +31,7 @@ describe('desktop package targets', () => {
       'node_modules/better-sqlite3/build/Release/better_sqlite3.node',
       '.native-cache/other.node',
     ];
-    const packed = ['out/main/index.js', 'node_modules/plain/index.js'];
+    const packed = ['out/main/index.js', 'out/main/archive-import-worker.js', 'node_modules/plain/index.js', 'node_modules/sharp-other/index.js', 'node_modules/@img-other/index.js', '.native-cache/plain.js'];
     try {
       for (const filename of [...unpacked, ...packed]) {
         fs.mkdirSync(path.dirname(path.join(source, filename)), { recursive: true });

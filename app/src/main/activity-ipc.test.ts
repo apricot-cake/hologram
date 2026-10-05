@@ -21,6 +21,32 @@ test('完全エクスポート owner は自身の library IPC idle を待てる'
   expect(await stub.handlers.get('export-complete')!(trustedIpcEvent(), 'complete', false)).toEqual({ saved: false });
 });
 
+test('完全インポート owner は自身の IPC を待たず、進行中の通常更新を待つ', async () => {
+  let release: () => void = () => {};
+  const editing = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  ipcMain.handle('set-tabs', async () => {
+    await editing;
+    return { ok: true };
+  });
+  const update = stub.handlers.get('set-tabs')!(trustedIpcEvent(), { tabs: [] });
+  let reached = false;
+  ipcMain.handle('import-complete', async () => {
+    closeLibraryIpcAdmission();
+    await new Promise<void>((resolve) => libraryIpcActivity.whenIdle(resolve));
+    reached = true;
+    return { ok: true, imported: 0, skipped: 0 };
+  });
+  const importing = stub.handlers.get('import-complete')!(trustedIpcEvent());
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(reached).toBe(false);
+  release();
+  await update;
+  expect(await importing).toMatchObject({ ok: true });
+  expect(reached).toBe(true);
+});
+
 test('画像だけの export が終了するまで relocation の idle 境界を開かない', async () => {
   let release: () => void = () => {};
   const blocked = new Promise<void>((resolve) => {

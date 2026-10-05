@@ -9,6 +9,7 @@ import { receivePostLink, registerPostLinkProtocol } from './post-link.ts';
 import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
+import { runCompleteArchiveImport } from './archive-import';
 import { appActivity } from './app-activity.ts';
 import { runLibraryBackgroundTask, waitForLibraryBackgroundIdle } from './lib-library-background-activity.ts';
 import { runAdmittedLibraryOperation } from './lib-library-admission.ts';
@@ -20,7 +21,7 @@ import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { retireScreenshotImages } from './lib-screenshot-retirement.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb, posterProfilesFromDb } from './lib-db-query.ts';
-import { createDbWriter } from './lib-db-write.ts';
+import { createDbWriter, ensureLibraryId } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { listTrashIndexRecords } from './lib-trash-capture.ts';
 import { drainInbox } from './lib-db-inbox.ts';
@@ -1028,6 +1029,32 @@ function registerExtractedIpc() {
         await resumeAfterLibraryRelocation(owner);
       }
     },
+    importCompleteArchive: (zipPath, folder) =>
+      runCompleteArchiveImport(zipPath, folder, {
+        getSaveFolder,
+        getLibraryIdentity: (owner) => {
+          if (owner === undefined) return ensureLibraryId(ensureDb().sqlite);
+          if (libraryRelocationOwner !== owner) throw new Error('stale import owner');
+          ownerDbAccess = true;
+          try {
+            return ensureLibraryId(ensureDb().sqlite);
+          } finally {
+            ownerDbAccess = false;
+          }
+        },
+        pause: pauseLibraryRelocation,
+        closeDb: (owner) => {
+          if (libraryRelocationOwner !== owner) throw new Error('stale import owner');
+          ownerDbAccess = true;
+          try {
+            ensurePostsSynced();
+          } finally {
+            ownerDbAccess = false;
+          }
+          closeDb();
+        },
+        finish: resumeAfterLibraryRelocation,
+      }),
     getDbForCompleteExport: (owner) => {
       if (libraryRelocationOwner !== owner) throw new Error('stale export owner');
       ownerDbAccess = true;

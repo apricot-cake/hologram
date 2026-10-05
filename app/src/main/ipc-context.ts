@@ -116,6 +116,7 @@ export interface IpcContext {
   beginCompleteExport(): CompleteExportWatermark;
   markExported(watermark: CompleteExportWatermark): ExportReminderState;
   getDbForCompleteExport(owner: number): DbHandle;
+  importCompleteArchive(zipPath: string, folder: string): Promise<import('./ipc-payloads').CompleteImportResult>;
   reserveCompleteExport(): number | null;
   pauseCompleteExport(owner: number): Promise<number | null>;
   finishCompleteExport(owner: number): Promise<void>;

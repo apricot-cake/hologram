@@ -8,7 +8,8 @@ import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main
 import { postsFromDb, postsByIds, posterProfilesFromDb } from '../../app/src/main/lib-db-query.ts';
 import { createDbWriter } from '../../app/src/main/lib-db-write.ts';
 import { buildSavedIndex } from '../../app/src/main/lib-saved-index.ts';
-import { writeCompleteZip, importCompleteZipToDb } from '../../app/src/main/lib-archive.ts';
+import { writeCompleteZip } from '../../app/src/main/lib-archive.ts';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { quotedCaptureId } from '../../native-host/quoted-id.mts';
 import { collectUnreferencedQuotes } from '../../app/src/main/lib-quoted-posts.ts';
 

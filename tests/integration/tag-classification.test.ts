@@ -7,7 +7,8 @@ import { openDatabase } from '../../app/src/main/lib-db';
 import { saveClassifiedTag, getClassifiedAssignments, setClassifiedAssignments } from '../../app/src/main/lib-tag-classification';
 import { deleteTags, mergeTags, renameTag } from '../../app/src/main/lib-db-tag-vocab';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
-import { writeCompleteZip, importCompleteZipToDb } from '../../app/src/main/lib-archive';
+import { writeCompleteZip } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { trashCapture } from '../../app/src/main/lib-trash-capture';
 import { MAX_CLASSIFIED_TAG_VOCABULARY, PortableClassifiedTagVocabulary } from '../../app/src/shared/tag-classification';
 

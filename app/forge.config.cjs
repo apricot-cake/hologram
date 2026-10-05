@@ -5,7 +5,10 @@ const root = __dirname;
 module.exports = {
   outDir: path.join(root, 'artifacts'),
   packagerConfig: {
-    asar: { unpack: '{**/{.**,**}/**/*.node,**/node_modules/{sharp,@img}/**/*}' },
+    asar: {
+      unpack: '*.node',
+      unpackDir: 'node_modules/{sharp,@img}',
+    },
     icon: path.join(root, 'assets', 'icon'),
     extraResource: [path.join(root, '..', 'native-host'), path.join(root, 'vendor', 'meilisearch'), path.join(root, 'vendor', 'avif')],
   },

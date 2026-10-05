@@ -14,8 +14,6 @@ import type { Entry as ZipEntry, ZipFile as ZipReader } from 'yauzl';
 import { ZipFile } from 'yazl';
 import type Database from 'better-sqlite3';
 import { commitFileAtomic } from './lib-atomic.ts';
-import { fillCardDims } from './lib-card-dims.ts';
-import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { postCapturedVia, postsFromDbSync } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
@@ -814,7 +812,7 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
   }
 }
 
-async function importCompleteZipToDb(sqlite: Database.Database, zipPath: string, destFolder: string) {
+async function prepareZipIntoEmptyDatabase(sqlite: Database.Database, zipPath: string, destFolder: string) {
   // autoClose:false にして、下の列挙の周回のあともエントリを読めるままにする
   // (openReadStream に fd が要る)。閉じるのは finally。
   const zipfile = await openZipForRead(zipPath, { autoClose: false });
@@ -884,81 +882,78 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   const stmts = preparePostStmts(sqlite);
   const resolveTagId = makeTagResolver(sqlite);
   const dbWriter = createDbWriter(sqlite);
+  // 空の私有 DB の FK によって、既存ライブラリだけにある投稿への参照を失わない。
+  sqlite.exec('CREATE TABLE IF NOT EXISTS archive_org (name TEXT PRIMARY KEY, json TEXT NOT NULL)');
+  const storeOrg = sqlite.prepare('INSERT OR REPLACE INTO archive_org(name,json) VALUES(?,?)');
+  const rememberOrg = (name: string, value: unknown) => storeOrg.run(name, JSON.stringify(value));
   const existingIds = new Set((sqlite.prepare('SELECT captureId FROM posts').all() as Array<{ captureId: string }>).map((r) => r.captureId));
+  if (orgEntries['classified-tags.json']) {
+    const vocab = PortableClassifiedTagVocabulary.parse(await parseOrgEntry(orgEntries['classified-tags.json']));
+    importClassifiedTagVocabulary(sqlite, vocab);
+  }
+  // 投稿は upsert ではなく、上のバイナリのキャプチャの書き込みと同じ「すでに在るものを決して
+  // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
+  // することは決してない。
+  for (const c of jsonCaptures) {
+    const raw = await parseEntry(c.entry);
+    const rec = { ...PostRecordInputSchema.parse(raw), ...PostFlagsSchema.parse(raw) };
+    if (existingIds.has(rec.captureId)) {
+      skipped++;
+      continue;
+    }
+    // 完全ZIPは投稿データとして取り込む。書庫の置換指示で既存投稿を削除しない。
+    // 私有 DB には入力値を保持する。非置換公開後、実際の宛先媒体を worker が計測する。
+    writePost(stmts, resolveTagId, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags, replaces: null });
+    dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
+    existingIds.add(rec.captureId);
+    imported++;
+  }
 
-  sqlite.exec('BEGIN');
-  try {
-    if (orgEntries['classified-tags.json']) {
-      const vocab = PortableClassifiedTagVocabulary.parse(await parseOrgEntry(orgEntries['classified-tags.json']));
-      importClassifiedTagVocabulary(sqlite, vocab);
-    }
-    // 投稿は upsert ではなく、上のバイナリのキャプチャの書き込みと同じ「すでに在るものを決して
-    // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
-    // することは決してない。
-    for (const c of jsonCaptures) {
-      const raw = await parseEntry(c.entry);
-      const rec = { ...PostRecordInputSchema.parse(raw), ...PostFlagsSchema.parse(raw) };
-      if (existingIds.has(rec.captureId)) {
-        skipped++;
-        continue;
-      }
-      // 完全ZIPは投稿データとして取り込む。書庫の置換指示で既存投稿を削除しない。
-      writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags, replaces: null })));
-      dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
-      existingIds.add(rec.captureId);
-      imported++;
-    }
-
-    // 整理の層。今の DB の状態を読む → 入って来た JSON と統合する（同じ純粋な MERGERS の
-    // 関数）→ 書き戻す。
-    if (orgEntries['folders.json'] || orgEntries['collections.json']) {
-      // 旧ファイルを先に、現ファイルを後から current 側として統合する。これにより modern format
-      // が衝突時に勝ちつつ、片方にしかない保存済み検索も失わない。
-      const legacy = orgEntries['collections.json'] ? foldersFromArchive(await parseOrgEntry(orgEntries['collections.json'])) : { folders: [], activeId: null };
-      const modern = orgEntries['folders.json'] ? foldersFromArchive(await parseOrgEntry(orgEntries['folders.json'])) : { folders: [], activeId: null };
-      const incoming = mergeFolders(modern, legacy);
-      dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), incoming));
-    }
-    if (orgEntries['ungrouped.json']) {
-      const inc = UngroupedSchema.parse(await parseOrgEntry(orgEntries['ungrouped.json']));
-      dbWriter.setUngrouped(mergeUngrouped(dbWriter.getUngrouped(), inc).keys);
-    }
-    if (orgEntries['manual-groups.json']) {
-      const inc = ManualGroupsSchema.parse(await parseOrgEntry(orgEntries['manual-groups.json']));
-      dbWriter.setManualGroups(mergeManualGroups(dbWriter.getManualGroups(), inc).groups);
-    }
-    if (orgEntries['poster-folders.json']) {
-      const inc = PosterFoldersSchema.parse(await parseOrgEntry(orgEntries['poster-folders.json']));
-      dbWriter.setPosterFolders(mergePosterFolders(dbWriter.getPosterFolders(), inc));
-    }
-    if (orgEntries['poster-tags.json']) {
-      const inc = PosterTagNamesSchema.parse(await parseOrgEntry(orgEntries['poster-tags.json']));
-      dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTagNames(), inc));
-    }
-    if (orgEntries['poster-profiles.json']) {
-      const inc = PosterProfilesSchema.parse(await parseOrgEntry(orgEntries['poster-profiles.json']));
-      dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
-    }
-    if (orgEntries['tag-groups.json']) {
-      const inc = TagGroupNamesSchema.parse(await parseOrgEntry(orgEntries['tag-groups.json']));
-      const merged = mergeTagGroups(dbWriter.getTagGroupNames(), inc);
-      // #810: 置き換えるのではなく埋める。mergeTagGroups がすでに衝突をローカル側の勝ちで
-      // 決着させているので、下ではローカルのエントリはどれも何もしないのと同じになり、この
-      // ライブラリが種別を持たない、入って来た名前だけが効く＝名前をキーにする統合からは見え
-      // ない同名の実体も、書き込みで入れ直されずに今の種別を保つ、ということでもある。
-      dbWriter.fillTagGroupsByName(merged.memberships, merged.labels ?? null);
-    }
-    // poster-favorites.json（古い書き出しから来る、MERGERS/ORG_MERGE の旧来のキー）。退役した
-    // 機能を裏付ける DB のテーブルは無い＝在っても黙って落とす。
-
-    // tabs.json は意図してここで取り込まない＝他の端末で開いていたタブを今のセッションへ復元
-    // するのは、既定の振る舞いとして紛らわしい（計画の §2c）。書き出しに残してあるのは、
-    // 完全性と調査のためだけ。
-
-    sqlite.exec('COMMIT');
-  } catch (err) {
-    sqlite.exec('ROLLBACK');
-    throw err;
+  // 整理の層。今の DB の状態を読む → 入って来た JSON と統合する（同じ純粋な MERGERS の
+  // 関数）→ 書き戻す。
+  if (orgEntries['folders.json'] || orgEntries['collections.json']) {
+    // 旧ファイルを先に、現ファイルを後から current 側として統合する。これにより modern format
+    // が衝突時に勝ちつつ、片方にしかない保存済み検索も失わない。
+    const legacy = orgEntries['collections.json'] ? foldersFromArchive(await parseOrgEntry(orgEntries['collections.json'])) : { folders: [], activeId: null };
+    const modern = orgEntries['folders.json'] ? foldersFromArchive(await parseOrgEntry(orgEntries['folders.json'])) : { folders: [], activeId: null };
+    const incoming = mergeFolders(modern, legacy);
+    rememberOrg('folders', incoming);
+    dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), incoming));
+  }
+  if (orgEntries['ungrouped.json']) {
+    const inc = UngroupedSchema.parse(await parseOrgEntry(orgEntries['ungrouped.json']));
+    rememberOrg('ungrouped', inc);
+    dbWriter.setUngrouped(mergeUngrouped(dbWriter.getUngrouped(), inc).keys);
+  }
+  if (orgEntries['manual-groups.json']) {
+    const inc = ManualGroupsSchema.parse(await parseOrgEntry(orgEntries['manual-groups.json']));
+    rememberOrg('manual-groups', inc);
+    dbWriter.setManualGroups(mergeManualGroups(dbWriter.getManualGroups(), inc).groups);
+  }
+  if (orgEntries['poster-folders.json']) {
+    const inc = PosterFoldersSchema.parse(await parseOrgEntry(orgEntries['poster-folders.json']));
+    rememberOrg('poster-folders', inc);
+    dbWriter.setPosterFolders(mergePosterFolders(dbWriter.getPosterFolders(), inc));
+  }
+  if (orgEntries['poster-tags.json']) {
+    const inc = PosterTagNamesSchema.parse(await parseOrgEntry(orgEntries['poster-tags.json']));
+    rememberOrg('poster-tags', inc);
+    dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTagNames(), inc));
+  }
+  if (orgEntries['poster-profiles.json']) {
+    const inc = PosterProfilesSchema.parse(await parseOrgEntry(orgEntries['poster-profiles.json']));
+    rememberOrg('poster-profiles', inc);
+    dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
+  }
+  if (orgEntries['tag-groups.json']) {
+    const inc = TagGroupNamesSchema.parse(await parseOrgEntry(orgEntries['tag-groups.json']));
+    rememberOrg('tag-groups', inc);
+    const merged = mergeTagGroups(dbWriter.getTagGroupNames(), inc);
+    // #810: 置き換えるのではなく埋める。mergeTagGroups がすでに衝突をローカル側の勝ちで
+    // 決着させているので、下ではローカルのエントリはどれも何もしないのと同じになり、この
+    // ライブラリが種別を持たない、入って来た名前だけが効く＝名前をキーにする統合からは見え
+    // ない同名の実体も、書き込みで入れ直されずに今の種別を保つ、ということでもある。
+    dbWriter.fillTagGroupsByName(merged.memberships, merged.labels ?? null);
   }
 
   return { ok: true as const, notComplete: false as const, imported, skipped };
@@ -1295,7 +1290,7 @@ export {
   writeImagesZip,
   hasExportableFiles,
   hasCompleteExportContent,
-  importCompleteZipToDb,
+  prepareZipIntoEmptyDatabase,
   ugoiraFramesPresent,
   readUgoiraFrame,
   ugoiraArchiveIndexStats,

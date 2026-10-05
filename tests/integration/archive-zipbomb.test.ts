@@ -36,7 +36,6 @@ import {
   MAX_ZIP_TOTAL_BYTES,
   ZipLimitError,
   clearUgoiraArchiveIndexes,
-  importCompleteZipToDb,
   readStreamCapped,
   readUgoiraFrame,
   setUgoiraBeforeReadHandleSlotForTest,
@@ -44,6 +43,7 @@ import {
   ugoiraFramesPresent,
   writeStreamCapped,
 } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive-import';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 
