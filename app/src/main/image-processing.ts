@@ -228,11 +228,16 @@ async function runSharp(inputPath: string, outputPath: string, options: ImageOpt
   });
 }
 
-async function browserFrame(inputPath: string, outputPath: string, metadata: { width: number; height: number; browserWidth?: number; browserHeight?: number }, options: ImageOptions): Promise<boolean> {
+async function runBrowserDecoder(script: string): Promise<unknown> {
   // Chromium を必要とする形式だけを、専用 session の背面 renderer で処理する。
   const win = new BrowserWindow({ show: false, focusable: false, webPreferences: { partition: `image-processing-${randomUUID()}`, sandbox: true, nodeIntegration: false, contextIsolation: true, backgroundThrottling: false } });
   let supervisor: ChildProcessWithoutNullStreams | undefined;
+  let stop!: () => void;
+  const stopped = new Promise<null>((resolve) => {
+    stop = () => resolve(null);
+  });
   const timer = setTimeout(() => {
+    stop();
     if (!win.isDestroyed()) win.destroy();
   }, limits.timeoutSeconds * 1_000);
   try {
@@ -244,23 +249,38 @@ async function browserFrame(inputPath: string, outputPath: string, metadata: { w
     const attachedSupervisor = await superviseProcess(win.webContents.getOSProcessId(), nativeExecutable());
     supervisor = attachedSupervisor;
     void attachedSupervisor.closed.then(() => {
+      stop();
       if (!win.isDestroyed()) win.destroy();
     });
-    const data = await win.webContents.executeJavaScript(
+    if (win.isDestroyed()) return null;
+    return await Promise.race([win.webContents.executeJavaScript(script, false), stopped]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    if (!win.isDestroyed()) win.destroy();
+    supervisor?.stdin.destroy();
+  }
+}
+
+async function browserFrame(inputPath: string, outputPath: string, metadata: { width: number; height: number; browserWidth?: number; browserHeight?: number }, options: ImageOptions): Promise<boolean> {
+  try {
+    const data = await runBrowserDecoder(
       `(async () => {
       const source = ${JSON.stringify(pathToFileURL(inputPath).href)};
       let image, decoder;
       const avif = ${path.extname(inputPath) === '.avif'};
-      if (avif) {
+      const apng = ${path.extname(inputPath) === '.png'};
+      if (avif || apng) {
         const response = await fetch(source);
-        decoder = new ImageDecoder({data:response.body, type:'image/avif'});
+        decoder = new ImageDecoder({data:response.body, type:avif ? 'image/avif' : 'image/png', preferAnimation:true});
         image = (await decoder.decode({frameIndex:0})).image;
       } else {
         image = new Image(); image.src = source; await image.decode();
       }
       try {
-      const sourceWidth = avif ? image.displayWidth : image.naturalWidth;
-      const sourceHeight = avif ? image.displayHeight : image.naturalHeight;
+      const sourceWidth = avif || apng ? image.displayWidth : image.naturalWidth;
+      const sourceHeight = avif || apng ? image.displayHeight : image.naturalHeight;
       const standardSize = sourceWidth === ${metadata.width} && sourceHeight === ${metadata.height};
       const browserSize = sourceWidth === ${metadata.browserWidth ?? metadata.width} && sourceHeight === ${metadata.browserHeight ?? metadata.height};
       if ((!standardSize && !browserSize) || sourceWidth * sourceHeight > ${limits.pixels}) return null;
@@ -280,9 +300,8 @@ async function browserFrame(inputPath: string, outputPath: string, metadata: { w
       context.rotate(rotation * Math.PI / 180);
       context.drawImage(image, -sourceWidth / 2, -sourceHeight / 2);
       return canvas.toDataURL('image/png');
-      } finally { if (avif) { image.close(); decoder.close(); } }
+      } finally { if (avif || apng) { image.close(); decoder.close(); } }
     })()`,
-      false,
     );
     if (typeof data !== 'string' || !data.startsWith('data:image/png;base64,') || data.length > Math.ceil((limits.outputBytes * 4) / 3) + 100) return false;
     const bytes = Buffer.from(data.slice(data.indexOf(',') + 1), 'base64');
@@ -291,11 +310,63 @@ async function browserFrame(inputPath: string, outputPath: string, metadata: { w
     return true;
   } catch {
     return false;
-  } finally {
-    clearTimeout(timer);
-    if (!win.isDestroyed()) win.destroy();
-    supervisor?.stdin.destroy();
   }
+}
+
+interface ApngMetadata {
+  width: number;
+  height: number;
+  frames: number;
+}
+
+// APNG の識別と復号前の予算確認だけを行う。チャンクやフレームの妥当性は Chromium で検査する。
+function apngMetadata(bytes: Buffer): ApngMetadata | null | undefined {
+  if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return undefined;
+  if (bytes.length < 33 || bytes.readUInt32BE(8) !== 13 || bytes.toString('ascii', 12, 16) !== 'IHDR') return null;
+  for (let offset = 33; offset + 12 <= bytes.length; ) {
+    const length = bytes.readUInt32BE(offset);
+    if (length > bytes.length - offset - 12) return null;
+    const name = bytes.toString('ascii', offset + 4, offset + 8);
+    if (name === 'acTL') {
+      if (length !== 8) return null;
+      const width = bytes.readUInt32BE(16);
+      const height = bytes.readUInt32BE(20);
+      const frames = bytes.readUInt32BE(offset + 8);
+      if (!width || !height || !frames || frames > limits.frames || width * height > limits.pixels || width * height * frames > limits.totalPixels) return null;
+      return { width, height, frames };
+    }
+    if (name === 'IDAT' || name === 'IEND') return undefined;
+    offset += length + 12;
+  }
+  return null;
+}
+
+async function validateApng(inputPath: string, metadata: ApngMetadata): Promise<boolean> {
+  const result = await runBrowserDecoder(`(async () => {
+    if (!await ImageDecoder.isTypeSupported('image/png')) return false;
+    const response = await fetch(${JSON.stringify(pathToFileURL(inputPath).href)});
+    const decoder = new ImageDecoder({data:await response.arrayBuffer(), type:'image/png', preferAnimation:true});
+    try {
+      await decoder.tracks.ready;
+      await decoder.completed;
+      const track = decoder.tracks.selectedTrack;
+      if (!track || track.frameCount !== ${metadata.frames} || (track.frameCount > 1 && !track.animated)) return false;
+      let totalPixels = 0;
+      for (let frameIndex = 0; frameIndex < track.frameCount; frameIndex++) {
+        const frame = await decoder.decode({frameIndex, completeFramesOnly:true});
+        try {
+          const image = frame.image;
+          const pixels = image.codedWidth * image.codedHeight;
+          totalPixels += pixels;
+          if (!frame.complete || image.codedWidth !== ${metadata.width} || image.codedHeight !== ${metadata.height}
+              || image.displayWidth !== ${metadata.width} || image.displayHeight !== ${metadata.height}
+              || pixels > ${limits.pixels} || totalPixels > ${limits.totalPixels}) return false;
+        } finally { frame.image.close(); }
+      }
+      return true;
+    } finally { decoder.close(); }
+  })()`);
+  return result === true;
 }
 
 async function remember(key: string, result: PreparedImage): Promise<void> {
@@ -331,14 +402,34 @@ async function prepare(bytes: Buffer, options: ImageOptions): Promise<PreparedIm
   const root = await getCacheDirectory();
   const avif = bytes.subarray(4, 8).toString('ascii') === 'ftyp' && ['avif', 'avis', 'mif1', 'msf1'].includes(bytes.subarray(8, 12).toString('ascii'));
   const bmp = bytes[0] === 0x42 && bytes[1] === 0x4d;
-  const inputPath = path.join(root, `${randomUUID()}.${avif ? 'avif' : bmp ? 'bmp' : 'input'}`);
+  const apng = apngMetadata(bytes);
+  if (apng === null) return null;
+  const inputPath = path.join(root, `${randomUUID()}.${avif ? 'avif' : bmp ? 'bmp' : apng ? 'png' : 'input'}`);
   const outputPath = path.join(root, `${randomUUID()}.${options.kind === 'copy' ? 'png' : 'webp'}`);
   await fs.writeFile(inputPath, bytes, { flag: 'wx' });
   let retainedInput = false;
   let completed = false;
   try {
     let result: PreparedImage | null;
-    if (avif) {
+    if (apng) {
+      if (!(await validateApng(inputPath, apng))) return null;
+      if (options.kind !== 'copy' && !options.rotation && !options.flipped) {
+        // 全フレームを検査した同じ snapshot を配り、透過・再生時間・ループを保つ。
+        result = { path: inputPath, mime: 'image/png', ...apng, avif: false };
+        retainedInput = true;
+      } else if (options.kind !== 'copy') {
+        // ビューの編集は CSS で行う。原本を加工する要求を静止画へ変えない。
+        return null;
+      } else {
+        const pngPath = path.join(root, `${randomUUID()}.png`);
+        try {
+          if (!(await browserFrame(inputPath, pngPath, apng, options))) return null;
+          result = await runSharp(pngPath, outputPath, { kind: 'copy', ...(options.width ? { width: options.width } : {}) });
+        } finally {
+          await fs.unlink(pngPath).catch(() => {});
+        }
+      }
+    } else if (avif) {
       const metadata = await validateAvif(inputPath);
       if (!metadata) return null;
       if (options.kind === 'preview') {

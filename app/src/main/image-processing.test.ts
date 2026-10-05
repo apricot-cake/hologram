@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { crc32, deflateSync } from 'node:zlib';
 import { afterEach, beforeEach, expect, test, vi, type Mock } from 'vitest';
 import { IMAGE_PROCESSING_LIMITS } from './image-processing-contract.ts';
 
@@ -32,6 +33,9 @@ let workerStarted: () => void;
 let nativeInput: string;
 const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
 let exitListeners: ReturnType<typeof process.rawListeners>;
+let apngMode: 'success' | 'failure' | 'dimensions' | 'count' | 'incomplete' | 'hang';
+let closedFrames: number[];
+let decoderClosed: boolean;
 
 beforeEach(async () => {
   exitListeners = process.rawListeners('exit');
@@ -51,11 +55,42 @@ beforeEach(async () => {
   nativeStarted = () => {};
   workerStarted = () => {};
   nativeInput = '';
+  apngMode = 'success';
+  closedFrames = [];
+  decoderClosed = false;
   mocks.window.mockImplementation(function () {
     let destroyed = false;
     const win = {
       loadURL: vi.fn(async () => undefined),
-      webContents: { getOSProcessId: () => 54321, executeJavaScript: vi.fn(async () => `data:image/png;base64,${browserPng.toString('base64')}`) },
+      webContents: {
+        getOSProcessId: () => 54321,
+        executeJavaScript: vi.fn(async (script: string) => {
+          if (!script.includes('completeFramesOnly:true')) return `data:image/png;base64,${browserPng.toString('base64')}`;
+          class ImageDecoder {
+            static isTypeSupported = async () => true;
+            tracks = { ready: Promise.resolve(), selectedTrack: { frameCount: apngMode === 'count' ? 1 : 2, animated: true } };
+            completed = Promise.resolve();
+            async decode({ frameIndex }: { frameIndex: number }) {
+              if (apngMode === 'failure' && frameIndex === 1) throw new Error('invalid APNG frame');
+              if (apngMode === 'hang') return new Promise(() => {});
+              return {
+                complete: apngMode !== 'incomplete',
+                image: {
+                  codedWidth: apngMode === 'dimensions' ? 2 : 1,
+                  codedHeight: 1,
+                  displayWidth: 1,
+                  displayHeight: 1,
+                  close: () => closedFrames.push(frameIndex),
+                },
+              };
+            }
+            close() {
+              decoderClosed = true;
+            }
+          }
+          return await new Function('ImageDecoder', 'fetch', `return ${script}`)(ImageDecoder, async () => ({ arrayBuffer: async () => new ArrayBuffer(0) }));
+        }),
+      },
       isDestroyed: () => destroyed,
       destroy: vi.fn(() => {
         destroyed = true;
@@ -129,6 +164,101 @@ function bmpBytes(width: number, height: number) {
   bytes.writeUInt16LE(24, 28);
   return bytes;
 }
+
+function apngBytes(frames = 2, width = 1, height = 1): Buffer {
+  const numbers = (...values: number[]) => {
+    const bytes = Buffer.alloc(values.length * 4);
+    values.forEach((value, index) => bytes.writeUInt32BE(value, index * 4));
+    return bytes;
+  };
+  const chunk = (name: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(name), data]);
+    return Buffer.concat([numbers(data.length), body, numbers(crc32(body))]);
+  };
+  const control = (sequence: number, delay: number) => Buffer.concat([numbers(sequence, width, height, 0, 0), Buffer.from([0, delay, 0, 10, 0, 0])]);
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', Buffer.concat([numbers(width, height), Buffer.from([8, 6, 0, 0, 0])])),
+    chunk('acTL', numbers(frames, 3)),
+    chunk('fcTL', control(0, 1)),
+    chunk('IDAT', deflateSync(Buffer.from([0, 255, 0, 0, 128]))),
+    chunk('fcTL', control(1, 2)),
+    chunk('fdAT', Buffer.concat([numbers(2), deflateSync(Buffer.from([0, 0, 0, 255, 128]))])),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+test.each(['preview', 'thumbnail'] as const)('APNG の %s は全フレーム検査済み snapshot の透過とアニメーションを保つ', async (kind) => {
+  const input = apngBytes();
+  const resultPromise = processing.prepareImageBytes(input, { kind, ...(kind === 'thumbnail' ? { width: 64 } : {}) });
+  const expected = Buffer.from(input);
+  input.fill(0);
+  const result = await resultPromise;
+  expect(result).toMatchObject({ mime: 'image/png', width: 1, height: 1, frames: 2 });
+  expect(await fs.readFile(result!.path)).toEqual(expected);
+  expect(closedFrames).toEqual([0, 1]);
+  expect(decoderClosed).toBe(true);
+  expect(mocks.fork).not.toHaveBeenCalled();
+  expect(supervisors).toHaveLength(1);
+  expect(mocks.window).toHaveBeenCalledWith(expect.objectContaining({ show: false, focusable: false }));
+  expect(windows[0].destroy).toHaveBeenCalledOnce();
+});
+
+test.each(['failure', 'dimensions', 'count', 'incomplete'] as const)('APNG の %s は原本へ戻らず拒否し decoder を閉じる', async (mode) => {
+  apngMode = mode;
+  expect(await processing.prepareImageBytes(apngBytes(), { kind: 'preview' })).toBeNull();
+  expect(decoderClosed).toBe(true);
+  expect(mocks.fork).not.toHaveBeenCalled();
+  expect(windows[0].destroy).toHaveBeenCalledOnce();
+});
+
+test.each([
+  [1001, 1, 1],
+  [2, 10000, 5000],
+  [20, 5000, 5000],
+  [0, 1, 1],
+])('APNG の宣言予算 %j を復号前に拒否する', async (frames, width, height) => {
+  expect(await processing.prepareImageBytes(apngBytes(frames, width, height), { kind: 'preview' })).toBeNull();
+  expect(mocks.window).not.toHaveBeenCalled();
+  expect(mocks.fork).not.toHaveBeenCalled();
+});
+
+test('APNG copy は全フレーム検査後に第一フレームを共通 PNG コピー経路へ渡す', async () => {
+  const result = await processing.prepareImageBytes(apngBytes(), { kind: 'copy', rotation: 90, flipped: true });
+  expect(result?.mime).toBe('image/png');
+  expect(closedFrames).toEqual([0, 1]);
+  expect(snapshots).toEqual([browserPng]);
+  expect(windows).toHaveLength(2);
+  const script = windows[1].webContents.executeJavaScript.mock.calls[0][0] as string;
+  expect(script).toContain('const apng = true');
+  expect(script).toContain('preferAnimation:true');
+  expect(script).toContain('const rotation = 90');
+  expect(supervisors).toHaveLength(3);
+});
+
+test('APNG の監督が拒否されたら復号を開始しない', async () => {
+  supervisorMode = 'reject';
+  expect(await processing.prepareImageBytes(apngBytes(), { kind: 'preview' })).toBeNull();
+  expect(windows[0].webContents.executeJavaScript).not.toHaveBeenCalled();
+  expect(mocks.fork).not.toHaveBeenCalled();
+});
+
+test('APNG の復号が停止したら期限で renderer を破棄し原本へ戻らない', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  apngMode = 'hang';
+  let signal!: () => void;
+  const started = new Promise<void>((resolve) => {
+    signal = resolve;
+  });
+  supervisorStarted = signal;
+  const result = processing.prepareImageBytes(apngBytes(), { kind: 'preview' });
+  await started;
+  await vi.advanceTimersByTimeAsync(IMAGE_PROCESSING_LIMITS.timeoutSeconds * 1000);
+  expect(await result).toBeNull();
+  expect(windows[0].destroy).toHaveBeenCalledOnce();
+  expect(supervisors[0].stdin.destroy).toHaveBeenCalledOnce();
+  expect(mocks.fork).not.toHaveBeenCalled();
+});
 
 test('BMP は専用 renderer の安全な bootstrap から読み、PNG 派生物を sharp 境界へ渡す', async () => {
   const result = await processing.prepareImageBytes(bmpBytes(2, 2), { kind: 'copy' });
