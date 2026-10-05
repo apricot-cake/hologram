@@ -15,6 +15,7 @@
 // 入口の分割は変えていない＝コンテンツスクリプトとサービスワーカーは今も別々のバンドル
 // で、互いに自分が使わない相を呼ばないだけ。
 import type { AnnouncedMedia } from '../../../native-host/protocol.mts';
+import type { SaveLogEntry } from '../capture-log.ts';
 
 // extractor が1枚の絵・1本の動画について申告するものは、`metadata.media[]` として
 // Native Messaging の境界を渡るものとまったく同じ。だから形は境界のある場所（#400・
@@ -173,7 +174,7 @@ interface Extractor {
 
   // === API 相（サービスワーカー） ===
 
-  fetchPost(parsed: any, url: string): Promise<PostRecord>;
+  fetchPost(parsed: any, url: string, logDiagnostic?: (entry: SaveLogEntry) => void): Promise<PostRecord>;
 
   // === メディアの URL（文脈は両方） ===
 

@@ -23,7 +23,14 @@ export const PixivProfileSchema = z.looseObject({
   commentHtml: optionalText,
   webpage: optionalText,
   social: z
-    .record(z.string(), z.looseObject({ url: z.string() }))
+    // 連携先がない実応答は {} ではなく []。空配列だけを空オブジェクトへ揃える。
+    .union([
+      z.record(z.string(), z.looseObject({ url: z.string() })),
+      z
+        .array(z.never())
+        .length(0)
+        .transform(() => ({})),
+    ])
     .nullable()
     .optional(),
 });

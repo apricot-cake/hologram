@@ -86,7 +86,7 @@ async function fetchPostMetadata(url, opts): Promise<PostRecord> {
     return unavailable(parsed.platform);
   }
   // 各工程が同じ取得期限を共有し、期限切れも部分的な取得結果と一緒に返す。
-  return extractor.fetchPost(parsed, url);
+  return extractor.fetchPost(parsed, url, opts?.logDiagnostic);
 }
 
 // === メディアの URL ===

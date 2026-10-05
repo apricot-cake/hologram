@@ -1,4 +1,6 @@
 import { ExtractedPostSchema } from '../../../native-host/protocol.mts';
+import { z } from 'zod';
+import type { SaveLogEntry } from '../capture-log.ts';
 import { PixivEnvelopeSchema, PixivIllustSchema, PixivPagesSchema, PixivProfileSchema, PixivUgoiraSchema, rethrowContractError } from './api-schemas.ts';
 // pixiv。
 //
@@ -235,7 +237,7 @@ function pixivProfileLinks(input: unknown): { name: string; value: string }[] | 
   return out.length ? out : null;
 }
 
-async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
+async function fetchPixivIllust(parsed, url, logDiagnostic?: (entry: SaveLogEntry) => void): Promise<PostRecord> {
   const request = createMetadataRequest();
   const rec = emptyRecord(url, 'pixiv');
   try {
@@ -312,8 +314,22 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     // いく。pixiv の公開 ajax はフォロワー数もアカウントの作成日も出さないので、そちらは
     // null のまま（X と同じ穏当な隠し方）。失敗すればアバターは null のままになる。
     if (il.userId) {
+      let profileStatus: number | null = null;
+      const reportProfile = (reason?: string, error?: unknown) => {
+        // 動的な record キーには利用者の値が入りうるため、固定のスキーマ欄だけ残す。
+        const fields = new Set(['error', 'body', 'image', 'imageBig', 'comment', 'commentHtml', 'webpage', 'social', 'url']);
+        const paths = error instanceof z.ZodError ? [...new Set(error.issues.slice(0, 12).map((issue) => issue.path.map((part) => (typeof part === 'string' && fields.has(part) ? part : '*')).join('.') || '(root)'))].join(',') : undefined;
+        try {
+          logDiagnostic?.({ stage: 'metadata', phase: reason ? 'fail' : 'ok', platform: 'pixiv', category: 'pixiv-profile', operation: 'ajax-user-full', code: profileStatus, reason, error: paths });
+        } catch {
+          // 診断の書き込み失敗は保存結果に影響させない。
+        }
+      };
       try {
-        const ures = await request(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' });
+        const ures = await request(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' }, (status) => {
+          profileStatus = status;
+        });
+        profileStatus = ures.status;
         if (ures.ok) {
           const udata = PixivEnvelopeSchema.parse(ures.data);
           if (!udata.error) {
@@ -326,10 +342,18 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
             // は無い。pixiv にバナーの概念は無い（rec.banner は null のまま）。
             rec.bio = profile.commentHtml ? htmlToText(profile.commentHtml) : profile.comment ? profile.comment : null;
             rec.profileLinks = pixivProfileLinks(profile);
-          } else acquisitionFailed(rec, 'profile', 'unavailable');
-        } else acquisitionFailed(rec, 'profile');
+            reportProfile();
+          } else {
+            acquisitionFailed(rec, 'profile', 'unavailable');
+            reportProfile('unavailable');
+          }
+        } else {
+          acquisitionFailed(rec, 'profile');
+          reportProfile('http');
+        }
       } catch (error) {
         acquisitionFailed(rec, 'profile', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
+        reportProfile(error instanceof z.ZodError ? 'contract' : error instanceof SyntaxError ? 'json' : 'transport', error);
       }
     }
   } catch (error) {

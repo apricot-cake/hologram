@@ -154,6 +154,28 @@ describe('fetchPixivIllust', () => {
   });
 
   // 削除済み・非公開・未ログインでの R-18 は 200 + {error:true} で返る
+  test.each([[], {}, null, { twitter: { url: 'https://example.com/artist' } }])('social=%j の正常プロフィールから画像を保存対象にする', async (social) => {
+    vi.stubGlobal('fetch', async (url) => {
+      if (String(url).includes('/user/')) return jsonRes({ error: false, body: { imageBig: 'https://i.pximg.net/avatar.jpg', comment: 'profile', social } });
+      if (String(url).endsWith('/pages')) return jsonRes({}, 404);
+      return jsonRes({ error: false, body });
+    });
+    const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
+    expect(rec.avatar).toBe('https://i.pximg.net/avatar.jpg');
+    expect(rec.avatarReferer).toBe('https://www.pixiv.net/');
+    expect(rec.bio).toBe('profile');
+    expect(rec.acquisitionIssues.some((issue) => issue.scope === 'profile')).toBe(false);
+    expect(rec.profileLinks).toEqual(social && !Array.isArray(social) && 'twitter' in social ? [{ name: 'twitter', value: 'https://example.com/artist' }] : null);
+  });
+
+  test('空でない配列やURLの欠けた連携先は正常扱いしない', async () => {
+    for (const social of [[{ url: 'https://example.com' }], { twitter: {} }]) {
+      vi.stubGlobal('fetch', async (url) => (String(url).includes('/user/') ? jsonRes({ error: false, body: { imageBig: 'https://i.pximg.net/avatar.jpg', social } }) : String(url).endsWith('/pages') ? jsonRes({}, 404) : jsonRes({ error: false, body })));
+      const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
+      expect(rec.acquisitionIssues).toContainEqual({ scope: 'profile', reason: 'invalidResponse' });
+    }
+  });
+
   test('エラー body は空レコード（throw しない）', async () => {
     vi.stubGlobal('fetch', async () => jsonRes({ error: true, message: 'not found' }));
     const rec = await fetchPixivIllust({ id: '1' }, 'https://www.pixiv.net/artworks/1');

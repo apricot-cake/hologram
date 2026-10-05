@@ -5,7 +5,7 @@ import { readJsonResponse } from './record.ts';
 // 本文まで期限に含める。期限後に補完リクエストを開始しない。
 export function createMetadataRequest() {
   const expiresAt = Date.now() + METADATA_TIMEOUT_MS;
-  return async (url: string, init?: RequestInit) => {
+  return async (url: string, init?: RequestInit, onResponse?: (status: number) => void) => {
     const remaining = expiresAt - Date.now();
     if (remaining <= 0) throw new DeadlineError('metadata fetch', METADATA_TIMEOUT_MS);
     const controller = new AbortController();
@@ -13,6 +13,7 @@ export function createMetadataRequest() {
       return await withDeadline(
         (async () => {
           const response = await fetch(url, { ...init, signal: controller.signal });
+          onResponse?.(response.status);
           const data = response.ok ? await readJsonResponse(response) : null;
           return { ok: response.ok, status: response.status, data };
         })(),

@@ -718,7 +718,7 @@ export function startBackground(): void {
 
     let meta: PostRecord;
     try {
-      meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
+      meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url), logDiagnostic: (entry: SaveLogEntry) => logCapture(entry, entry.phase === 'fail') });
     } catch (err) {
       throw trace.fail('metadata', err?.message || 'metadata fetch threw');
     }
