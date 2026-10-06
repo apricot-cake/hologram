@@ -87,6 +87,8 @@
     "app:make": "npm run _make --workspace=app",
     "app:publish": "npm run _publish --workspace=app",
     "diag:capture": "node scripts/summarize-capture-timings.cts",
-    "diag:extension": "node scripts/read-extension-diagnostics.cts"
+    "diag:extension": "node scripts/read-extension-diagnostics.cts",
+    "diag:api:collect": "node scripts/collect-api-responses.cts",
+    "diag:api:replay": "node scripts/replay-api-responses.cts"
   }
 }

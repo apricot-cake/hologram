@@ -168,6 +168,14 @@ describe('生成された manifest は登録簿の宣言どおり', () => {
 // === 2. 名指しされたファイルが出力に実在する ====================================
 
 describe('manifest とコードが名指しするファイルは出力に在る', () => {
+  test('開発専用の API 応答収集ツールは拡張機能の成果物に含まれない', () => {
+    const files = fs.readdirSync(OUT, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile() && /\.(?:js|html|json|css)$/.test(entry.name));
+    expect(files.length).toBeGreaterThan(0);
+    for (const entry of files) {
+      expect(fs.readFileSync(path.join(entry.parentPath, entry.name), 'utf8'), entry.name).not.toContain('HOLOGRAM_DEV_API_RESPONSE_CAPTURE_V1');
+    }
+  });
+
   test('manifest が指すバンドル・ページ・画像が全部在る', () => {
     // manifest の中の「ファイルに見える文字列」を全部拾う＝将来 manifest に足された
     // ファイル参照も、この一覧を編集せずにこの検査へ入る。

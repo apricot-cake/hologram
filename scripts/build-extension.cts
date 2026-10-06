@@ -24,10 +24,10 @@ const ROOT = path.join(__dirname, '..');
 const EXTENSION = path.join(ROOT, 'extension');
 const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 
-// リリースに紛れ込んではいけない開発サーバーの指紋。
+// リリースに紛れ込んではいけない開発サーバー・開発専用収集ツールの目印。
 // 開発用 native host 名は同じリリースビルドに意図して含める。どちらを使うかは
 // Chrome プロファイル自身の storage.local で決まり、既定はリリース host である。
-const FORBIDDEN_TEXT = ['/@vite/client', 'sourceMappingURL='];
+const FORBIDDEN_TEXT = ['/@vite/client', 'sourceMappingURL=', 'HOLOGRAM_DEV_API_RESPONSE_CAPTURE_V1'];
 
 // manifestではなくコード内で「文字列」として名指しされるエントリポイント。
 // これらが消えても他の誰も気付かない: background.tsは有効化のたびに

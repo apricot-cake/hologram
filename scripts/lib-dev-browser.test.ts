@@ -117,3 +117,29 @@ test('所有プロセスが異常終了したら進行中の操作を失敗さ�
   await expect(startDevelopmentBrowser({ profile }, { fork: () => child })).rejects.toThrow('終了しました');
   expect(child.disconnect).toHaveBeenCalledOnce();
 });
+
+test('長い開発用収集は指定した待機期限まで継続できる', async () => {
+  vi.useFakeTimers();
+  const child: any = new EventEmitter();
+  child.connected = true;
+  child.disconnect = vi.fn(() => {
+    child.connected = false;
+  });
+  child.unref = vi.fn();
+  let pending: any;
+  child.send = (message, callback) => {
+    callback(null);
+    if (message.operation === 'run') pending = message;
+    else queueMicrotask(() => child.emit('message', { id: message.id, result: null }));
+  };
+  try {
+    const session = await startDevelopmentBrowser({ profile }, { fork: () => child });
+    const run = session.run('probe.cts', [], 330_000);
+    await vi.advanceTimersByTimeAsync(121_000);
+    child.emit('message', { id: pending.id, result: 'completed' });
+    await expect(run).resolves.toBe('completed');
+    await session.release();
+  } finally {
+    vi.useRealTimers();
+  }
+});

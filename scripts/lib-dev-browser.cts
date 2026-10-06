@@ -59,14 +59,14 @@ function startDevelopmentBrowser(options = developmentOptions(), dependencies: a
   };
   child.on('error', rejectPending);
   child.on('exit', (code: number) => rejectPending(new Error(`開発用 Chrome の所有プロセスが終了しました (${code})`)));
-  const send = (operation: string, args: any = {}): Promise<any> =>
+  const send = (operation: string, args: any = {}, timeoutMs = 120_000): Promise<any> =>
     new Promise((resolve, reject) => {
       if (released || !child.connected) return reject(new Error('開発用 Chrome の所有プロセスへの接続は終了しています'));
       const id = ++nextId;
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(new Error(`開発用 Chrome の操作が時間内に完了しませんでした: ${operation}`));
-      }, 120_000);
+      }, timeoutMs);
       pending.set(id, { resolve, reject, timer });
       child.send({ id, operation, args }, (error: Error | null) => {
         if (error) {
@@ -104,7 +104,7 @@ function startDevelopmentBrowser(options = developmentOptions(), dependencies: a
       reload: (output: string) => send('reload', { output }),
       verify: (url: string, host: string) => send('verify', { url, host }),
       marker: () => send('marker'),
-      run: (modulePath: string, args: string[]) => send('run', { modulePath: path.resolve(modulePath), args }),
+      run: (modulePath: string, args: string[], timeoutMs = 120_000) => send('run', { modulePath: path.resolve(modulePath), args }, timeoutMs),
       release,
     }),
     (error: Error) => {
