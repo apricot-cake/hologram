@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { expect, test, vi } from 'vitest';
 const download = vi.hoisted(() => vi.fn());
-vi.mock('./media-download.mts', () => ({ MAX_MEDIA: 12, createByteBudget: () => ({}), downloadOneMedia: download }));
+vi.mock('./media-download.mts', () => ({ MAX_MEDIA: 200, createByteBudget: () => ({}), downloadOneMedia: download }));
 import { downloadQuotedPost } from './quoted-storage.mts';
 
 test('引用画像を共有して再利用し、取得失敗時も本文を残す', async () => {

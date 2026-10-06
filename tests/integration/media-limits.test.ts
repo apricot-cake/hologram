@@ -101,20 +101,21 @@ test('合計予算の既定は 512MB・同時取得数は 2', () => {
 });
 
 describe('同時取得数の制限', () => {
-  test('点数上限まで渡しても同時に開く本文は MEDIA_CONCURRENCY 件まで', async () => {
+  test('37枚の投稿を先頭12枚で切らず、同時に開く本文は MEDIA_CONCURRENCY 件まで', async () => {
     const base = 'conc-1';
-    const urls = Array.from({ length: MAX_MEDIA }, (_, i) => `https://cdn.test/${i}/n-2.png`);
+    const urls = Array.from({ length: 37 }, (_, i) => `https://cdn.test/${i}/n-1.png`);
 
     const saved = await downloadMedia(entries(urls), dir, base, createByteBudget(64 * MB));
 
-    expect(saved).toHaveLength(MAX_MEDIA);
+    expect(saved).toHaveLength(37);
+    expect(saved.map((m) => m.url)).toEqual(urls);
     expect(peakOpenBodies).toBe(MEDIA_CONCURRENCY);
   });
 
   test('MAX_MEDIA を超えた分は取得すらしない', async () => {
     const urls = Array.from({ length: MAX_MEDIA + 3 }, (_, i) => `https://cdn.test/over-${i}/n-1.png`);
 
-    const saved = await downloadMedia(entries(urls), dir, 'conc-2', createByteBudget(64 * MB));
+    const saved = await downloadMedia(entries(urls), dir, 'conc-2', createByteBudget(512 * MB));
 
     expect(saved).toHaveLength(MAX_MEDIA);
   });
