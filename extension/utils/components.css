@@ -253,7 +253,8 @@
 .surface[data-variant='toast'] .toast-details-toggle { padding: 2px 0; border: 0; background: transparent; }
 .surface[data-hologram-toast-details] { display: block; pointer-events: auto; }
 .surface[data-hologram-toast-details][hidden] { display: none; }
-.toast-details-heading { justify-content: flex-end; margin-bottom: 4px; }
+.toast-details-heading { position: absolute; top: 12px; right: 12px; }
+.toast-failures > .toast-failure:first-child > div:first-child { padding-right: 26px; }
 .toast-failure-group > .surface[hidden] { display: none; }
 .toast-details-heading span { font-weight: 500; }
 .toast-target { color: var(--hologram-ink-muted); font-size: 12px; margin-bottom: 4px; }
