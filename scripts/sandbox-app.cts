@@ -288,12 +288,17 @@ async function start(opts: StartOptions) {
   // HMRの生成物で普段使いの app/out を上書きしない。
   const sandboxOutput = path.join(sandboxRoot, 'out');
   fs.cpSync(path.join(appDir, 'assets'), path.join(sandboxRoot, 'assets'), { recursive: true });
+  // Electron は package.json のあるアプリフォルダーから起動する。
+  // JS ファイルを直接指定すると app.getAppPath() が main 出力先になり、
+  // 画像検査器・検索エンジン・アーカイブ処理の vendor パスが解決できない。
+  fs.copyFileSync(path.join(appDir, 'package.json'), path.join(sandboxRoot, 'package.json'));
+  fs.cpSync(path.join(appDir, 'vendor'), path.join(sandboxRoot, 'vendor'), { recursive: true });
   const env = Object.assign({}, process.env, {
     APPDATA: appData,
     HOLOGRAM_CONFIG_DIR: configDir,
     HOLOGRAM_SANDBOX: '1',
     HOLOGRAM_APP_BUILD_OUT: sandboxOutput,
-    ELECTRON_ENTRY: path.join(sandboxOutput, 'main', 'index.js'),
+    ELECTRON_ENTRY: sandboxRoot,
     REMOTE_DEBUGGING_PORT: String(port),
     // 検証インスタンスはキーボードの前の人ではなくセッションが起動する: それが
     // その人の作業からフォアグラウンドを奪ってはいけない。手で操作したい稀な実行
