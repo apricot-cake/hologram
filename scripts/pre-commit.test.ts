@@ -55,10 +55,10 @@ function index(directory: string) {
 function commit(directory: string, args: string[] = []) {
   return git(directory, ['commit', '--quiet', '-m', 'ステージの検証', ...args]);
 }
-function fakeFormatter(directory: string, source: string) {
+function fakeFormatter(directory: string, source: string, args: string[] = []) {
   const file = path.join(directory, 'formatter.cjs');
   fs.writeFileSync(file, source);
-  return { command: process.execPath, args: [file] };
+  return { command: process.execPath, args: [file, ...args] };
 }
 
 afterEach(() => {
@@ -181,7 +181,8 @@ describe('実 Git とステージ済み内容の整形', () => {
       const release = path.join(directory, 'release');
       const formatter = fakeFormatter(
         directory,
-        `const fs=require('node:fs'); fs.writeFileSync('entry.ts','export const a = 2;\\n'); fs.writeFileSync(${JSON.stringify(ready)},'ready'); const finish=()=>{if(fs.existsSync(${JSON.stringify(release)})){watcher.close();}}; const watcher=fs.watch(${JSON.stringify(directory)},finish); finish();`,
+        `const fs=require('node:fs'); const [ready,release,directory]=process.argv.slice(2); fs.writeFileSync('entry.ts','export const a = 2;\\n'); fs.writeFileSync(ready,'ready'); const finish=()=>{if(fs.existsSync(release)){watcher.close();}}; const watcher=fs.watch(directory,finish); finish();`,
+        [ready, release, directory],
       );
       const running = runPreCommit({ cwd: directory, formatter });
       const result = running.catch((error: Error) => error);
@@ -207,7 +208,7 @@ describe('実 Git とステージ済み内容の整形', () => {
     stage(directory, 'export const a=2;\n');
     const before = index(directory);
     const lock = path.join(directory, '.git', 'index.lock');
-    const formatter = fakeFormatter(directory, `const fs=require('node:fs'); fs.writeFileSync('entry.ts','export const a = 2;\\n'); fs.writeFileSync(${JSON.stringify(lock)},'late foreign owner',{flag:'wx'});`);
+    const formatter = fakeFormatter(directory, "const fs=require('node:fs'); fs.writeFileSync('entry.ts','export const a = 2;\\n'); fs.writeFileSync(process.argv[2],'late foreign owner',{flag:'wx'});", [lock]);
     await expect(runPreCommit({ cwd: directory, formatter })).rejects.toThrow();
     expect(index(directory)).toEqual(before);
     expect(fs.readFileSync(lock, 'utf8')).toBe('late foreign owner');
@@ -245,7 +246,7 @@ describe('実 Git とステージ済み内容の整形', () => {
     stage(directory, 'export const a=2;\n');
     const before = index(directory);
     const pidFile = path.join(directory, 'pid');
-    const formatter = fakeFormatter(directory, `require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid)); setInterval(()=>{},1000);`);
+    const formatter = fakeFormatter(directory, "require('node:fs').writeFileSync(process.argv[2],String(process.pid)); setInterval(()=>{},1000);", [pidFile]);
     await expect(runPreCommit({ cwd: directory, formatter, timeoutMs: 1500 })).rejects.toThrow('制限時間');
     const pid = Number(fs.readFileSync(pidFile, 'utf8'));
     expect(() => process.kill(pid, 0)).toThrow();
